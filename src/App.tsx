@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { addStockMovement, createLocalOrder, createLocation, createOrder, createProduct, createRecipe, createVendor, currentUser, fetchCategories, fetchInventory, fetchLocalProducts, fetchOrders, fetchOrganization, fetchProducts, fetchReorderItems, fetchRecipes, fetchLocations, fetchRegisters, fetchUsers, fetchVendors, login, produceBatch, receivePurchase, sendReceipt, syncCatalogToAgent, syncLocalOrdersToCloud, updateLocationStatus, updateProduct, updateProductStatus, updateReorderLevel, updateUserStatus, type Category, type InventoryItem, type LocalOrder, type Order, type Product, type Recipe, type User, type Organization, type Location, type Register, type UserSummary, type Vendor } from './lib/api'
+import { addStockMovement, createLocalOrder, createLocation, createOrder, createProduct, createRecipe, createVendor, currentUser, fetchCategories, fetchInventory, fetchLocalProducts, fetchOrders, fetchOrganization, fetchProducts, fetchPurchases, fetchReorderItems, fetchRecipes, fetchLocations, fetchRegisters, fetchStockMovements, fetchUsers, fetchVendors, login, produceBatch, receivePurchase, sendReceipt, syncCatalogToAgent, syncLocalOrdersToCloud, updateLocationStatus, updateProduct, updateProductStatus, updateReorderLevel, updateUserStatus, type Category, type InventoryItem, type LocalOrder, type Order, type Product, type PurchaseRecord, type Recipe, type StockMovementRecord, type User, type Organization, type Location, type Register, type UserSummary, type Vendor } from './lib/api'
 import { clearToken } from './lib/api'
 import './styles.css'
 
@@ -10,7 +10,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [loginForm, setLoginForm] = useState({ username: 'cashier', password: 'cashier123' })
   const [loginError, setLoginError] = useState('')
-  const [section, setSection] = useState<'pos' | 'inventory' | 'catalog' | 'reorder' | 'production' | 'orders' | 'purchase' | 'reports' | 'admin'>('pos')
+  const [section, setSection] = useState<'pos' | 'inventory' | 'catalog' | 'reorder' | 'production' | 'vendors' | 'purchase' | 'reportsSales' | 'reportsPurchase' | 'reportsInventory' | 'admin'>('pos')
   const [openGroup, setOpenGroup] = useState('workspace')
   const [products, setProducts] = useState<Product[]>([])
   const [localProducts, setLocalProducts] = useState<Product[]>([])
@@ -24,6 +24,8 @@ export default function App() {
   const [registers, setRegisters] = useState<Register[]>([])
   const [users, setUsers] = useState<UserSummary[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
+  const [purchases, setPurchases] = useState<PurchaseRecord[]>([])
+  const [stockMovements, setStockMovements] = useState<StockMovementRecord[]>([])
   const [language, setLanguage] = useState<'en' | 'ta'>('en')
   const [locationForm, setLocationForm] = useState({ name: '', type: 'store' })
   const [cart, setCart] = useState<CartLine[]>([])
@@ -35,15 +37,18 @@ export default function App() {
   const [productionForm, setProductionForm] = useState({ name: '', outputProductId: 0, ingredientProductId: 0, quantityPerUnit: '', batchQuantity: '', expiresAt: '' })
   const [vendorForm, setVendorForm] = useState({ name: '', displayName: '', email: '', phone: '', gstin: '', address: '', paymentTerms: '' })
   const [purchaseForm, setPurchaseForm] = useState({ vendorId: 0, reference: '', productId: 0, quantity: '', unitCost: '', batchNumber: '', expiryDate: '' })
+  const [editingProductId, setEditingProductId] = useState<number | null>(null)
+  const [catalogQuery, setCatalogQuery] = useState('')
+  const [catalogCategoryFilter, setCatalogCategoryFilter] = useState(0)
 
   const canManage = user?.role === 'admin' || user?.role === 'manager'
-  const labels = language === 'ta' ? { pos: 'விற்பனை', orders: 'விற்பனை வரலாறு', catalog: 'பொருள் பட்டியல்', inventory: 'சரக்கு பெறுதல்', production: 'தயாரிப்பு', reorder: 'மறுவரிசை', purchase: 'கொள்முதல்', reports: 'அறிக்கைகள்', admin: 'நிர்வாகம்', sync: 'பதிவேட்டை ஒத்திசை', signOut: 'வெளியேறு', administration: 'நிர்வாகம்' } : { pos: 'POS sale', orders: 'Sales history', catalog: 'Catalog', inventory: 'Stock receiving', production: 'Prepared production', reorder: 'Reorder queue', purchase: 'Purchase', reports: 'Reports', admin: 'Administration', sync: 'Sync register', signOut: 'Sign out', administration: 'Administration' }
+  const labels = language === 'ta' ? { pos: 'விற்பனை', catalog: 'பொருள் பட்டியல்', inventory: 'சரக்கு பெறுதல்', production: 'தயாரிப்பு', reorder: 'மறுவரிசை', vendors: 'விற்பனையாளர்', purchase: 'கொள்முதல்', reportsSales: 'விற்பனை அறிக்கை', reportsPurchase: 'கொள்முதல் அறிக்கை', reportsInventory: 'சரக்கு அறிக்கை', admin: 'நிர்வாகம்', sync: 'பதிவேட்டை ஒத்திசை', signOut: 'வெளியேறு', administration: 'நிர்வாகம்' } : { pos: 'POS sale', catalog: 'Catalog', inventory: 'Stock receiving', production: 'Prepared production', reorder: 'Reorder queue', vendors: 'Vendors', purchase: 'Purchase receiving', reportsSales: 'Sales', reportsPurchase: 'Purchase', reportsInventory: 'Inventory', admin: 'Administration', sync: 'Sync register', signOut: 'Sign out', administration: 'Administration' }
   const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 2600) }
   const loadData = async () => {
     const [loadedProducts, loadedCategories, loadedInventory, loadedOrders] = await Promise.all([fetchProducts(), fetchCategories(), fetchInventory(), fetchOrders()])
     setProducts(loadedProducts); setCategories(loadedCategories); setInventory(loadedInventory); setOrders(loadedOrders)
     fetchLocalProducts().then(setLocalProducts).catch(() => setLocalProducts([]))
-    if (canManage) { setReorders(await fetchReorderItems()); setRecipes(await fetchRecipes()); setVendors(await fetchVendors()) }
+    if (canManage) { setReorders(await fetchReorderItems()); setRecipes(await fetchRecipes()); setVendors(await fetchVendors()); setPurchases(await fetchPurchases()); setStockMovements(await fetchStockMovements()) }
     if (user?.role === 'admin') { setOrganization(await fetchOrganization()); setLocations(await fetchLocations()); setRegisters(await fetchRegisters()); setUsers(await fetchUsers()) }
   }
   useEffect(() => { currentUser().then(setUser).catch(() => setUser(null)) }, [])
@@ -57,7 +62,9 @@ export default function App() {
   const changeQuantity = (productId: number, delta: number) => setCart((current) => current.map((line) => line.product.id === productId ? { ...line, quantity: line.quantity + delta } : line).filter((line) => line.quantity > 0))
 
   const submitLogin = async (event: React.FormEvent) => { event.preventDefault(); try { setLoginError(''); setUser(await login(loginForm.username, loginForm.password)) } catch { setLoginError('Invalid credentials or API is offline') } }
-  const submitProduct = async (event: React.FormEvent) => { event.preventDefault(); try { const input = { sku: productForm.sku, name: productForm.name, categoryId: productForm.categoryId, price: Number(productForm.price), unit: productForm.unit, active: true, inventoryMode: productForm.inventoryMode, barcode: productForm.barcode || undefined, description: productForm.description || undefined, purchasePrice: Number(productForm.purchasePrice || 0), vendorId: productForm.vendorId || undefined, origin: productForm.origin || undefined, taxRate: Number(productForm.taxRate || 0), hsnCode: productForm.hsnCode || undefined, gstRate: Number(productForm.gstRate || 0), cgstRate: Number(productForm.cgstRate || 0), sgstRate: Number(productForm.sgstRate || 0) }; await createProduct(input); setProductForm({ sku: '', name: '', categoryId: 0, price: '', unit: 'each', inventoryMode: 'stocked', barcode: '', description: '', purchasePrice: '', vendorId: 0, origin: '', taxRate: '', hsnCode: '', gstRate: '', cgstRate: '', sgstRate: '' }); await loadData(); notify('Item added to catalog') } catch (error) { notify(error instanceof Error ? error.message : 'Could not add item') } }
+  const submitProduct = async (event: React.FormEvent) => { event.preventDefault(); try { const input = { sku: productForm.sku, name: productForm.name, categoryId: productForm.categoryId, price: Number(productForm.price), unit: productForm.unit, active: true, inventoryMode: productForm.inventoryMode, barcode: productForm.barcode || undefined, description: productForm.description || undefined, purchasePrice: Number(productForm.purchasePrice || 0), vendorId: productForm.vendorId || undefined, origin: productForm.origin || undefined, taxRate: Number(productForm.taxRate || 0), hsnCode: productForm.hsnCode || undefined, gstRate: Number(productForm.gstRate || 0), cgstRate: Number(productForm.cgstRate || 0), sgstRate: Number(productForm.sgstRate || 0) }; if (editingProductId) { await updateProduct(editingProductId, input); notify('Item updated') } else { await createProduct(input); notify('Item added to catalog') } setEditingProductId(null); setProductForm({ sku: '', name: '', categoryId: 0, price: '', unit: 'each', inventoryMode: 'stocked', barcode: '', description: '', purchasePrice: '', vendorId: 0, origin: '', taxRate: '', hsnCode: '', gstRate: '', cgstRate: '', sgstRate: '' }); await loadData() } catch (error) { notify(error instanceof Error ? error.message : 'Could not save item') } }
+  const editProduct = (product: Product) => { setEditingProductId(product.id); setProductForm({ sku: product.sku, name: product.name, categoryId: product.categoryId, price: String(product.price), unit: product.unit, inventoryMode: product.inventoryMode, barcode: product.barcode ?? '', description: product.description ?? '', purchasePrice: String(product.purchasePrice ?? ''), vendorId: product.vendorId ?? 0, origin: product.origin ?? '', taxRate: String(product.taxRate ?? ''), hsnCode: product.hsnCode ?? '', gstRate: String(product.gstRate ?? ''), cgstRate: String(product.cgstRate ?? ''), sgstRate: String(product.sgstRate ?? '') }) }
+  const cancelEditProduct = () => { setEditingProductId(null); setProductForm({ sku: '', name: '', categoryId: 0, price: '', unit: 'each', inventoryMode: 'stocked', barcode: '', description: '', purchasePrice: '', vendorId: 0, origin: '', taxRate: '', hsnCode: '', gstRate: '', cgstRate: '', sgstRate: '' }) }
   const submitStock = async (event: React.FormEvent) => { event.preventDefault(); try { await addStockMovement({ productId: stockForm.productId, locationId: user!.locationId, quantity: Number(stockForm.quantity), type: 'stock-receipt', reason: 'Phase 1 receiving' }); if (stockForm.reorderLevel) await updateReorderLevel(stockForm.productId, user!.locationId, Number(stockForm.reorderLevel)); await loadData(); setStockForm({ productId: 0, quantity: '', reorderLevel: '' }); notify('Inventory updated') } catch (error) { notify(error instanceof Error ? error.message : 'Could not update inventory') } }
   const completeSale = async () => { try { const order = await createOrder({ registerId: 'register-03', orderType: 'counter-sale', paymentMethod: 'card', lines: cart.map((line) => ({ productId: line.product.id, quantity: line.quantity })) }); const printed = await sendReceipt(order); setCart([]); await loadData(); notify(printed ? `Sale ${order.orderNumber} completed and receipt queued` : `Sale ${order.orderNumber} completed; printer unavailable`) } catch (error) { notify(error instanceof Error ? error.message : 'Sale failed') } }
   const completeLocalSale = async () => { try { const localOrder: LocalOrder = { id: crypto.randomUUID(), orderNumber: `LOCAL-${Date.now()}`, registerId: 'register-03', paymentMethod: 'card', total, status: 'queued', createdAt: new Date().toISOString(), lines: cart.map((line) => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unitPrice: line.product.price })) }; const saved = await createLocalOrder(localOrder); const printable: Order = { id: saved.id, orderNumber: saved.orderNumber, registerId: saved.registerId, orderType: 'counter-sale', paymentMethod: saved.paymentMethod, status: 'paid', subtotal, tax, total: saved.total, createdAt: saved.createdAt, lines: saved.lines }; const printed = await sendReceipt(printable); setReceiptText([`COUNTERPOINT POS`, `Order: ${saved.orderNumber}`, `Register: ${saved.registerId}`, '', ...saved.lines.map((line) => `${line.quantity} x ${line.name}  ${money(line.unitPrice)}`), '', `TOTAL: ${money(saved.total)}`].join('\n')); setCart([]); await loadData(); notify(printed ? `Sale saved locally and receipt queued` : `Sale saved locally; printer unavailable`) } catch (error) { notify(error instanceof Error ? error.message : 'Local sale failed') } }
@@ -72,13 +79,13 @@ export default function App() {
 
   if (!user) return <div className="login-screen"><div className="login-card"><div className="brand-mark">CP</div><p className="eyebrow">Counterpoint operations</p><h1>Sign in to continue</h1><p className="login-copy">Use your assigned role to access POS, inventory, and catalog operations.</p><form onSubmit={submitLogin}><label>Username<input value={loginForm.username} onChange={(event) => setLoginForm({ ...loginForm, username: event.target.value })} /></label><label>Password<input type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} /></label>{loginError && <p className="form-error">{loginError}</p>}<button className="primary-button">Sign in</button></form><small>Development accounts: admin / admin123, manager / manager123, cashier / cashier123</small></div></div>
 
-  const sectionLabel: Record<string, string> = { pos: labels.pos, orders: labels.orders, catalog: labels.catalog, inventory: labels.inventory, production: labels.production, reorder: labels.reorder, purchase: labels.purchase, reports: labels.reports, admin: labels.admin }
+  const sectionLabel: Record<string, string> = { pos: labels.pos, catalog: labels.catalog, inventory: labels.inventory, production: labels.production, reorder: labels.reorder, vendors: labels.vendors, purchase: labels.purchase, reportsSales: labels.reportsSales, reportsPurchase: labels.reportsPurchase, reportsInventory: labels.reportsInventory, admin: labels.admin }
   type NavItem = { key: typeof section; label: string; badge?: number }
   const navGroups: Array<{ key: string; label: string; visible: boolean; items: NavItem[] }> = [
     { key: 'workspace', label: 'Workspace', visible: true, items: [{ key: 'pos', label: labels.pos }] },
     { key: 'inventory', label: 'Inventory', visible: canManage, items: [{ key: 'catalog', label: labels.catalog }, { key: 'inventory', label: labels.inventory }, { key: 'production', label: labels.production }, { key: 'reorder', label: labels.reorder, badge: reorders.length }] },
-    { key: 'purchase', label: 'Purchase', visible: canManage, items: [{ key: 'purchase', label: labels.purchase }] },
-    { key: 'reports', label: 'Reports', visible: canManage, items: [{ key: 'orders', label: labels.orders }, { key: 'reports', label: labels.reports }] },
+    { key: 'purchase', label: 'Purchase', visible: canManage, items: [{ key: 'vendors', label: labels.vendors }, { key: 'purchase', label: labels.purchase }] },
+    { key: 'reports', label: 'Reports', visible: canManage, items: [{ key: 'reportsSales', label: labels.reportsSales }, { key: 'reportsPurchase', label: labels.reportsPurchase }, { key: 'reportsInventory', label: labels.reportsInventory }] },
     { key: 'admin', label: 'Admin', visible: user.role === 'admin', items: [{ key: 'admin', label: labels.administration }] },
   ]
 
@@ -117,14 +124,16 @@ export default function App() {
           <span className="data-status">Local SQLite · PostgreSQL sync</span>
         </div>
         {section === 'pos' && <PosView products={localProducts.length ? localProducts : filteredProducts} query={query} setQuery={setQuery} addToCart={addToCart} cart={cart} changeQuantity={changeQuantity} clearCart={() => setCart([])} subtotal={subtotal} tax={tax} total={total} completeSale={completeLocalSale} />}
-        {section === 'catalog' && <CatalogView products={products} categories={categories} vendors={vendors} form={productForm} setForm={(form) => setProductForm({ ...productForm, ...form })} submit={submitProduct} />}
+        {section === 'catalog' && <CatalogView products={products} categories={categories} vendors={vendors} form={productForm} setForm={(form) => setProductForm({ ...productForm, ...form })} submit={submitProduct} editingProductId={editingProductId} onEdit={editProduct} onCancelEdit={cancelEditProduct} onToggleStatus={toggleProduct} query={catalogQuery} setQuery={setCatalogQuery} categoryFilter={catalogCategoryFilter} setCategoryFilter={setCatalogCategoryFilter} />}
         {section === 'inventory' && <InventoryView inventory={inventory} products={products} form={stockForm} setForm={setStockForm} submit={submitStock} />}
         {section === 'production' && <ProductionView products={products} recipes={recipes} form={productionForm} setForm={setProductionForm} submit={submitProduction} />}
         {section === 'reorder' && <ReorderView items={reorders} />}
-        {section === 'orders' && <OrdersView orders={orders} />}
-        {section === 'purchase' && <PurchaseView vendors={vendors} products={products} vendorForm={vendorForm} setVendorForm={setVendorForm} submitVendor={submitVendor} purchaseForm={purchaseForm} setPurchaseForm={setPurchaseForm} submitPurchase={submitPurchase} />}
-        {section === 'reports' && <ReportsView orders={orders} inventory={inventory} />}
-        {section === 'admin' && <AdminView organization={organization} locations={locations} registers={registers} users={users} products={products} toggleProduct={toggleProduct} toggleLocation={toggleLocation} toggleUser={async (id, active) => { await updateUserStatus(id, active); setUsers(await fetchUsers()) }} locationForm={locationForm} setLocationForm={setLocationForm} submitLocation={submitLocation} />}
+        {section === 'vendors' && <VendorsView vendors={vendors} vendorForm={vendorForm} setVendorForm={setVendorForm} submitVendor={submitVendor} />}
+        {section === 'purchase' && <PurchaseView vendors={vendors} products={products} purchaseForm={purchaseForm} setPurchaseForm={setPurchaseForm} submitPurchase={submitPurchase} />}
+        {section === 'reportsSales' && <ReportsSalesView orders={orders} />}
+        {section === 'reportsPurchase' && <ReportsPurchaseView purchases={purchases} />}
+        {section === 'reportsInventory' && <ReportsInventoryView inventory={inventory} movements={stockMovements} />}
+        {section === 'admin' && <AdminView organization={organization} locations={locations} registers={registers} users={users} toggleLocation={toggleLocation} toggleUser={async (id, active) => { await updateUserStatus(id, active); setUsers(await fetchUsers()) }} locationForm={locationForm} setLocationForm={setLocationForm} submitLocation={submitLocation} />}
       </main>
     </div>
     {receiptText && <div className="receipt-modal-backdrop"><section className="receipt-modal"><h2>Receipt preview</h2><pre>{receiptText}</pre><div><button className="primary-button" onClick={() => window.print()}>Print / Save PDF</button><button className="secondary-button" onClick={downloadReceipt}>Download TXT</button><button className="secondary-button" onClick={() => setReceiptText('')}>Close</button></div></section></div>}
@@ -134,10 +143,12 @@ export default function App() {
 
 function PosView({ products, query, setQuery, addToCart, cart, changeQuantity, clearCart, subtotal, tax, total, completeSale }: { products: Product[]; query: string; setQuery: (value: string) => void; addToCart: (product: Product) => void; cart: CartLine[]; changeQuantity: (id: number, delta: number) => void; clearCart: () => void; subtotal: number; tax: number; total: number; completeSale: () => void }) { return <div className="pos-layout"><section><input className="wide-search" placeholder="Search SKU or product name" value={query} onChange={(event) => setQuery(event.target.value)} /><div className="real-product-grid">{products.map((product) => <button className={`real-product ${product.stock <= 0 ? 'out-of-stock' : ''}`} key={product.id} disabled={product.stock <= 0} onClick={() => addToCart(product)}><span>{product.sku}</span><strong>{product.name}</strong><small>{money(product.price)} · {product.stock} {product.unit} available</small></button>)}</div>{!products.length && <div className="empty-panel">No catalog items match this search.</div>}</section><aside className="sale-panel"><div className="panel-heading"><div><p className="eyebrow">Current sale</p><h2>{cart.length ? `${cart.reduce((sum, line) => sum + line.quantity, 0)} items` : 'Empty sale'}</h2></div><button onClick={clearCart}>Clear</button></div><div className="sale-lines">{cart.map((line) => <div className="sale-line" key={line.product.id}><div><strong>{line.product.name}</strong><small>{money(line.product.price)} each</small></div><div className="stepper"><button onClick={() => changeQuantity(line.product.id, -1)}>−</button><span>{line.quantity}</span><button disabled={line.quantity >= line.product.stock} onClick={() => changeQuantity(line.product.id, 1)}>+</button></div><b>{money(line.product.price * line.quantity)}</b></div>)}</div><div className="sale-total"><span>Subtotal</span><b>{money(subtotal)}</b><span>Tax</span><b>{money(tax)}</b><strong>Total</strong><strong>{money(total)}</strong></div><button className="primary-button" disabled={!cart.length} onClick={completeSale}>Complete sale · {money(total)}</button></aside></div> }
 type CatalogForm = { sku: string; name: string; categoryId: number; price: string; unit: string; inventoryMode: string; barcode: string; description: string; purchasePrice: string; vendorId: number; origin: string; taxRate: string; hsnCode: string; gstRate: string; cgstRate: string; sgstRate: string }
-function CatalogView({ products, categories, vendors, form, setForm, submit }: { products: Product[]; categories: Category[]; vendors: Vendor[]; form: CatalogForm; setForm: (form: CatalogForm) => void; submit: (event: React.FormEvent) => void }) {
+function CatalogView({ products, categories, vendors, form, setForm, submit, editingProductId, onEdit, onCancelEdit, onToggleStatus, query, setQuery, categoryFilter, setCategoryFilter }: { products: Product[]; categories: Category[]; vendors: Vendor[]; form: CatalogForm; setForm: (form: CatalogForm) => void; submit: (event: React.FormEvent) => void; editingProductId: number | null; onEdit: (product: Product) => void; onCancelEdit: () => void; onToggleStatus: (id: number, active: boolean) => Promise<void>; query: string; setQuery: (value: string) => void; categoryFilter: number; setCategoryFilter: (value: number) => void }) {
+  const setGstRate = (value: string) => { const half = value ? (Number(value) / 2).toString() : ''; setForm({ ...form, gstRate: value, cgstRate: half, sgstRate: half }) }
+  const filtered = products.filter((product) => (!categoryFilter || product.categoryId === categoryFilter) && `${product.name} ${product.sku} ${product.hsnCode ?? ''}`.toLowerCase().includes(query.toLowerCase()))
   return <div className="management-grid catalog-grid">
     <form className="form-panel item-details-form" onSubmit={submit}>
-      <h2 className="wide-field">Add catalog item</h2>
+      <h2 className="wide-field">{editingProductId ? 'Edit catalog item' : 'Add catalog item'}</h2>
       <p className="wide-field">Item master data, pricing, tax, and vendor details live together here — no separate screen.</p>
       <label>Item name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
       <label>SKU / code<input required value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} /></label>
@@ -149,15 +160,23 @@ function CatalogView({ products, categories, vendors, form, setForm, submit }: {
       <label>Sale price<input required type="number" min="0" step="0.01" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} /></label>
       <label>Purchase price<input type="number" min="0" step="0.01" value={form.purchasePrice} onChange={(event) => setForm({ ...form, purchasePrice: event.target.value })} /></label>
       <label>Tax rate (%)<input type="number" min="0" step="0.001" value={form.taxRate} onChange={(event) => setForm({ ...form, taxRate: event.target.value })} /></label>
-      <label>GST (%)<input type="number" min="0" step="0.001" value={form.gstRate} onChange={(event) => setForm({ ...form, gstRate: event.target.value })} /></label>
-      <label>CGST (%)<input type="number" min="0" step="0.001" value={form.cgstRate} onChange={(event) => setForm({ ...form, cgstRate: event.target.value })} /></label>
-      <label>SGST (%)<input type="number" min="0" step="0.001" value={form.sgstRate} onChange={(event) => setForm({ ...form, sgstRate: event.target.value })} /></label>
+      <label>GST (%)<input type="number" min="0" step="0.001" value={form.gstRate} onChange={(event) => setGstRate(event.target.value)} /></label>
+      <label>CGST (%)<input type="number" disabled value={form.cgstRate} readOnly /></label>
+      <label>SGST (%)<input type="number" disabled value={form.sgstRate} readOnly /></label>
       <label>Vendor<select value={form.vendorId || ''} onChange={(event) => setForm({ ...form, vendorId: Number(event.target.value) })}><option value="">No vendor</option>{vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.displayName}</option>)}</select></label>
       <label>Origin<input value={form.origin} onChange={(event) => setForm({ ...form, origin: event.target.value })} /></label>
       <label className="wide-field">Description<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
-      <button className="primary-button wide-field">Add item</button>
+      <button className="primary-button wide-field">{editingProductId ? 'Save changes' : 'Add item'}</button>
+      {editingProductId && <button type="button" className="secondary-button wide-field" onClick={onCancelEdit}>Cancel edit</button>}
     </form>
-    <DataTable title="Current catalog" headers={['SKU', 'Name', 'Category', 'Mode', 'Price', 'HSN']} rows={products.map((product) => [product.sku, product.name, product.category, product.inventoryMode, money(product.price), product.hsnCode ?? '—'])} />
+    <section className="table-panel">
+      <div className="panel-heading"><h2>Current catalog</h2><span>{filtered.length} records</span></div>
+      <div className="catalog-filters">
+        <input className="wide-search" placeholder="Search name, SKU, or HSN code" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <select value={categoryFilter || ''} onChange={(event) => setCategoryFilter(Number(event.target.value))}><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+      </div>
+      {filtered.length ? <div className="table-scroll"><table><thead><tr><th>SKU</th><th>Name</th><th>Category</th><th>Mode</th><th>Price</th><th>HSN</th><th>Status</th><th>Action</th></tr></thead><tbody>{filtered.map((product) => <tr key={product.id}><td>{product.sku}</td><td>{product.name}</td><td>{product.category}</td><td>{product.inventoryMode}</td><td>{money(product.price)}</td><td>{product.hsnCode ?? '—'}</td><td>{product.active ? 'Active' : 'Inactive'}</td><td><button className="table-action" onClick={() => onEdit(product)}>Edit</button><button className="table-action" onClick={() => onToggleStatus(product.id, !product.active)}>{product.active ? 'Deactivate' : 'Activate'}</button></td></tr>)}</tbody></table></div> : <div className="empty-panel">No catalog items match this search.</div>}
+    </section>
   </div>
 }
 
@@ -166,11 +185,11 @@ function ProductionView({ products, recipes, form, setForm, submit }: { products
 
 type VendorForm = { name: string; displayName: string; email: string; phone: string; gstin: string; address: string; paymentTerms: string }
 type PurchaseForm = { vendorId: number; reference: string; productId: number; quantity: string; unitCost: string; batchNumber: string; expiryDate: string }
-function PurchaseView({ vendors, products, vendorForm, setVendorForm, submitVendor, purchaseForm, setPurchaseForm, submitPurchase }: { vendors: Vendor[]; products: Product[]; vendorForm: VendorForm; setVendorForm: (form: VendorForm) => void; submitVendor: (event: React.FormEvent) => void; purchaseForm: PurchaseForm; setPurchaseForm: (form: PurchaseForm) => void; submitPurchase: (event: React.FormEvent) => void }) {
+function VendorsView({ vendors, vendorForm, setVendorForm, submitVendor }: { vendors: Vendor[]; vendorForm: VendorForm; setVendorForm: (form: VendorForm) => void; submitVendor: (event: React.FormEvent) => void }) {
   return <div className="admin-grid">
     <form className="form-panel item-details-form" onSubmit={submitVendor}>
       <h2 className="wide-field">Add vendor</h2>
-      <p className="wide-field">Vendors feed both catalog sourcing and purchase receiving below.</p>
+      <p className="wide-field">Vendors feed both catalog sourcing and purchase receiving.</p>
       <label>Vendor code<input required value={vendorForm.name} onChange={(event) => setVendorForm({ ...vendorForm, name: event.target.value })} /></label>
       <label>Display name<input required value={vendorForm.displayName} onChange={(event) => setVendorForm({ ...vendorForm, displayName: event.target.value })} /></label>
       <label>Email<input type="email" value={vendorForm.email} onChange={(event) => setVendorForm({ ...vendorForm, email: event.target.value })} /></label>
@@ -181,6 +200,11 @@ function PurchaseView({ vendors, products, vendorForm, setVendorForm, submitVend
       <button className="primary-button wide-field">Add vendor</button>
     </form>
     <DataTable title="Vendors" headers={['Name', 'Display name', 'Email', 'Phone', 'Status']} rows={vendors.map((vendor) => [vendor.name, vendor.displayName, vendor.email ?? '—', vendor.phone ?? '—', vendor.active ? 'Active' : 'Inactive'])} empty="No vendors added yet." />
+  </div>
+}
+
+function PurchaseView({ vendors, products, purchaseForm, setPurchaseForm, submitPurchase }: { vendors: Vendor[]; products: Product[]; purchaseForm: PurchaseForm; setPurchaseForm: (form: PurchaseForm) => void; submitPurchase: (event: React.FormEvent) => void }) {
+  return <div className="admin-grid">
     <form className="form-panel item-details-form" onSubmit={submitPurchase}>
       <h2 className="wide-field">Receive purchase</h2>
       <p className="wide-field">Posting a receipt increases on-hand stock at your location immediately.</p>
@@ -196,19 +220,71 @@ function PurchaseView({ vendors, products, vendorForm, setVendorForm, submitVend
   </div>
 }
 
-function ReportsView({ orders, inventory }: { orders: Order[]; inventory: InventoryItem[] }) {
-  const totalSales = orders.reduce((sum, order) => sum + order.total, 0)
+type Period = 'today' | 'week' | 'month' | 'all'
+const inPeriod = (isoDate: string, period: Period) => {
+  if (period === 'all') return true
+  const date = new Date(isoDate).getTime()
+  const now = Date.now()
+  const spanMs = period === 'today' ? 24 * 60 * 60 * 1000 : period === 'week' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000
+  return now - date <= spanMs
+}
+function PeriodFilter({ period, setPeriod }: { period: Period; setPeriod: (value: Period) => void }) {
+  return <div className="period-filter">
+    {(['today', 'week', 'month', 'all'] as Period[]).map((option) => <button key={option} type="button" className={period === option ? 'active' : ''} onClick={() => setPeriod(option)}>{option === 'today' ? 'Daily' : option === 'week' ? 'Weekly' : option === 'month' ? 'Monthly' : 'All'}</button>)}
+  </div>
+}
+
+function ReportsSalesView({ orders }: { orders: Order[] }) {
+  const [tab, setTab] = useState<'order' | 'item'>('order')
+  const [period, setPeriod] = useState<Period>('all')
+  const filteredOrders = orders.filter((order) => inPeriod(order.createdAt, period))
+  const totalSales = filteredOrders.reduce((sum, order) => sum + order.total, 0)
+  const itemTotals = new Map<string, { quantity: number; total: number }>()
+  filteredOrders.forEach((order) => order.lines.forEach((line) => { const entry = itemTotals.get(line.name) ?? { quantity: 0, total: 0 }; entry.quantity += line.quantity; entry.total += line.quantity * line.unitPrice; itemTotals.set(line.name, entry) }))
   return <div className="admin-grid">
     <section className="table-panel">
       <div className="panel-heading"><h2>Sales summary</h2></div>
-      <div className="admin-summary"><strong>{money(totalSales)}</strong><span>{orders.length} orders recorded</span><small>Total sales value across all synced orders.</small></div>
+      <PeriodFilter period={period} setPeriod={setPeriod} />
+      <div className="admin-summary"><strong>{money(totalSales)}</strong><span>{filteredOrders.length} orders recorded</span><small>Total sales value for the selected period.</small></div>
+      <div className="report-tabs"><button className={tab === 'order' ? 'active' : ''} onClick={() => setTab('order')}>By order</button><button className={tab === 'item' ? 'active' : ''} onClick={() => setTab('item')}>By item</button></div>
     </section>
-    <DataTable title="Sales by order" headers={['Order', 'Register', 'Status', 'Total', 'Created']} rows={orders.map((order) => [order.orderNumber, order.registerId, order.status, money(order.total), new Date(order.createdAt).toLocaleString()])} empty="No sales recorded yet." />
-    <DataTable title="Inventory summary" headers={['SKU', 'Item', 'On hand', 'Reorder', 'Status']} rows={inventory.map((item) => [item.sku, item.productName, `${item.onHand} ${item.unit}`, `${item.reorderLevel}`, item.needsReorder ? 'REORDER' : 'Healthy'])} empty="No inventory recorded yet." />
+    {tab === 'order' && <DataTable title="Sales by order" headers={['Order', 'Register', 'Status', 'Total', 'Created']} rows={filteredOrders.map((order) => [order.orderNumber, order.registerId, order.status, money(order.total), new Date(order.createdAt).toLocaleString()])} empty="No sales recorded for this period." />}
+    {tab === 'item' && <DataTable title="Sales by item" headers={['Item', 'Quantity sold', 'Total']} rows={Array.from(itemTotals.entries()).map(([name, entry]) => [name, `${entry.quantity}`, money(entry.total)])} empty="No item sales recorded for this period." />}
+  </div>
+}
+
+function ReportsPurchaseView({ purchases }: { purchases: PurchaseRecord[] }) {
+  const [tab, setTab] = useState<'details' | 'vendor'>('details')
+  const [period, setPeriod] = useState<Period>('all')
+  const filtered = purchases.filter((purchase) => inPeriod(purchase.receivedAt, period))
+  const vendorTotals = new Map<string, number>()
+  filtered.forEach((purchase) => vendorTotals.set(purchase.vendorName, (vendorTotals.get(purchase.vendorName) ?? 0) + purchase.totalCost))
+  return <div className="admin-grid">
+    <section className="table-panel">
+      <div className="panel-heading"><h2>Purchase summary</h2></div>
+      <PeriodFilter period={period} setPeriod={setPeriod} />
+      <div className="report-tabs"><button className={tab === 'details' ? 'active' : ''} onClick={() => setTab('details')}>Purchase details</button><button className={tab === 'vendor' ? 'active' : ''} onClick={() => setTab('vendor')}>By vendor</button></div>
+    </section>
+    {tab === 'details' && <DataTable title="Purchase details" headers={['Reference', 'Vendor', 'Location', 'Total', 'Received']} rows={filtered.map((purchase) => [purchase.reference, purchase.vendorName, purchase.locationName, money(purchase.totalCost), new Date(purchase.receivedAt).toLocaleString()])} empty="No purchases recorded for this period." />}
+    {tab === 'vendor' && <DataTable title="Purchases by vendor" headers={['Vendor', 'Total']} rows={Array.from(vendorTotals.entries()).map(([name, total]) => [name, money(total)])} empty="No purchases recorded for this period." />}
+  </div>
+}
+
+function ReportsInventoryView({ inventory, movements }: { inventory: InventoryItem[]; movements: StockMovementRecord[] }) {
+  const [tab, setTab] = useState<'summary' | 'movements'>('summary')
+  const [period, setPeriod] = useState<Period>('all')
+  const filteredMovements = movements.filter((movement) => inPeriod(movement.createdAt, period))
+  return <div className="admin-grid">
+    <section className="table-panel">
+      <div className="panel-heading"><h2>Inventory summary</h2></div>
+      <PeriodFilter period={period} setPeriod={setPeriod} />
+      <div className="report-tabs"><button className={tab === 'summary' ? 'active' : ''} onClick={() => setTab('summary')}>Stock summary</button><button className={tab === 'movements' ? 'active' : ''} onClick={() => setTab('movements')}>Stock movements</button></div>
+    </section>
+    {tab === 'summary' && <DataTable title="Inventory summary" headers={['SKU', 'Item', 'On hand', 'Reorder', 'Status']} rows={inventory.map((item) => [item.sku, item.productName, `${item.onHand} ${item.unit}`, `${item.reorderLevel}`, item.needsReorder ? 'REORDER' : 'Healthy'])} empty="No inventory recorded yet." />}
+    {tab === 'movements' && <DataTable title="Stock movements" headers={['SKU', 'Item', 'Location', 'Quantity', 'Type', 'Actor', 'Created']} rows={filteredMovements.map((movement) => [movement.sku, movement.productName, movement.locationName, `${movement.quantity}`, movement.type, movement.actor, new Date(movement.createdAt).toLocaleString()])} empty="No stock movements recorded for this period." />}
   </div>
 }
 
 function ReorderView({ items }: { items: InventoryItem[] }) { return <DataTable title="Reorder queue" headers={['SKU', 'Item', 'On hand', 'Reorder level', 'Location']} rows={items.map((item) => [item.sku, item.productName, `${item.onHand} ${item.unit}`, `${item.reorderLevel}`, item.locationName])} empty="No items currently need reordering." /> }
-function OrdersView({ orders }: { orders: Order[] }) { return <DataTable title="Recent sales" headers={['Order', 'Register', 'Status', 'Total', 'Created']} rows={orders.map((order) => [order.orderNumber, order.registerId, order.status, money(order.total), new Date(order.createdAt).toLocaleString()])} empty="No sales recorded yet." /> }
-function AdminView({ organization, locations, registers, users, products, toggleProduct, toggleLocation, toggleUser, locationForm, setLocationForm, submitLocation }: { organization: Organization | null; locations: Location[]; registers: Register[]; users: UserSummary[]; products: Product[]; toggleProduct: (id: number, active: boolean) => Promise<void>; toggleLocation: (id: number, active: boolean) => Promise<void>; toggleUser: (id: number, active: boolean) => Promise<void>; locationForm: { name: string; type: string }; setLocationForm: (form: { name: string; type: string }) => void; submitLocation: (event: React.FormEvent) => void }) { return <div className="admin-grid"><section className="table-panel"><div className="panel-heading"><h2>Organization</h2></div><div className="admin-summary"><strong>{organization?.name ?? 'Loading...'}</strong><span>{organization?.currency} · {organization?.timeZone}</span><small>Central organization settings and operational scope.</small></div></section><form className="form-panel" onSubmit={submitLocation}><h2>Add business location</h2><label>Name<input required value={locationForm.name} onChange={(event) => setLocationForm({ ...locationForm, name: event.target.value })} /></label><label>Type<select value={locationForm.type} onChange={(event) => setLocationForm({ ...locationForm, type: event.target.value })}><option value="store">Store</option><option value="cafe">Cafe</option><option value="farm">Farm</option><option value="warehouse">Warehouse</option></select></label><button className="primary-button">Add location</button></form><section className="table-panel"><div className="panel-heading"><h2>Business locations</h2><span>{locations.length} records</span></div><div className="table-scroll"><table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Action</th></tr></thead><tbody>{locations.map((location) => <tr key={location.id}><td>{location.name}</td><td>{location.type}</td><td>{location.active ? 'Active' : 'Inactive'}</td><td><button className="table-action" onClick={() => toggleLocation(location.id, !location.active)}>{location.active ? 'Deactivate' : 'Activate'}</button></td></tr>)}</tbody></table></div></section><section className="table-panel"><div className="panel-heading"><h2>Catalog status</h2><span>{products.length} records</span></div><div className="table-scroll"><table><thead><tr><th>SKU</th><th>Name</th><th>Mode</th><th>Status</th><th>Action</th></tr></thead><tbody>{products.map((product) => <tr key={product.id}><td>{product.sku}</td><td>{product.name}</td><td>{product.inventoryMode}</td><td>{product.active ? 'Active' : 'Inactive'}</td><td><button className="table-action" onClick={() => toggleProduct(product.id, !product.active)}>{product.active ? 'Deactivate' : 'Activate'}</button></td></tr>)}</tbody></table></div></section><DataTable title="Registers and devices" headers={['Register', 'Name', 'Device', 'Status']} rows={registers.map((register) => [register.registerId, register.name, register.deviceId, register.active ? 'Active' : 'Inactive'])} empty="No registers configured." /><section className="table-panel"><div className="panel-heading"><h2>Users and roles</h2><span>{users.length} records</span></div><div className="table-scroll"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.username}</td><td>{user.displayName}</td><td>{user.role}</td><td>{user.active ? 'Active' : 'Inactive'}</td><td><button className="table-action" onClick={() => toggleUser(user.id, !user.active)}>{user.active ? 'Deactivate' : 'Activate'}</button></td></tr>)}</tbody></table></div></section></div> }
+function AdminView({ organization, locations, registers, users, toggleLocation, toggleUser, locationForm, setLocationForm, submitLocation }: { organization: Organization | null; locations: Location[]; registers: Register[]; users: UserSummary[]; toggleLocation: (id: number, active: boolean) => Promise<void>; toggleUser: (id: number, active: boolean) => Promise<void>; locationForm: { name: string; type: string }; setLocationForm: (form: { name: string; type: string }) => void; submitLocation: (event: React.FormEvent) => void }) { return <div className="admin-grid"><section className="table-panel"><div className="panel-heading"><h2>Organization</h2></div><div className="admin-summary"><strong>{organization?.name ?? 'Loading...'}</strong><span>{organization?.currency} · {organization?.timeZone}</span><small>Central organization settings and operational scope.</small></div></section><form className="form-panel" onSubmit={submitLocation}><h2>Add business location</h2><label>Name<input required value={locationForm.name} onChange={(event) => setLocationForm({ ...locationForm, name: event.target.value })} /></label><label>Type<select value={locationForm.type} onChange={(event) => setLocationForm({ ...locationForm, type: event.target.value })}><option value="store">Store</option><option value="cafe">Cafe</option><option value="farm">Farm</option><option value="warehouse">Warehouse</option></select></label><button className="primary-button">Add location</button></form><section className="table-panel"><div className="panel-heading"><h2>Business locations</h2><span>{locations.length} records</span></div><div className="table-scroll"><table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Action</th></tr></thead><tbody>{locations.map((location) => <tr key={location.id}><td>{location.name}</td><td>{location.type}</td><td>{location.active ? 'Active' : 'Inactive'}</td><td><button className="table-action" onClick={() => toggleLocation(location.id, !location.active)}>{location.active ? 'Deactivate' : 'Activate'}</button></td></tr>)}</tbody></table></div></section><DataTable title="Registers and devices" headers={['Register', 'Name', 'Device', 'Status']} rows={registers.map((register) => [register.registerId, register.name, register.deviceId, register.active ? 'Active' : 'Inactive'])} empty="No registers configured." /><section className="table-panel"><div className="panel-heading"><h2>Users and roles</h2><span>{users.length} records</span></div><div className="table-scroll"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.username}</td><td>{user.displayName}</td><td>{user.role}</td><td>{user.active ? 'Active' : 'Inactive'}</td><td><button className="table-action" onClick={() => toggleUser(user.id, !user.active)}>{user.active ? 'Deactivate' : 'Activate'}</button></td></tr>)}</tbody></table></div></section></div> }
 function DataTable({ title, headers, rows, empty = 'No records found.' }: { title: string; headers: string[]; rows: string[][]; empty?: string }) { return <section className="table-panel"><div className="panel-heading"><h2>{title}</h2><span>{rows.length} records</span></div>{rows.length ? <div className="table-scroll"><table><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div> : <div className="empty-panel">{empty}</div>}</section> }

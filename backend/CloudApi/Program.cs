@@ -31,12 +31,14 @@ app.MapGet("/api/products", (PosStore store, HttpRequest request, SessionStore s
 app.MapGet("/api/vendors", (PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is not null ? Results.Ok(store.GetVendors()) : Results.StatusCode(403));
 app.MapPost("/api/vendors", (VendorInput input, PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is not null ? Results.Created("/api/vendors", store.CreateVendor(input)) : Results.StatusCode(403));
 app.MapPost("/api/purchases", (PurchaseInput input, PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is { } user ? Results.Ok(store.ReceivePurchase(input, user.Username)) : Results.StatusCode(403));
+app.MapGet("/api/purchases", (PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is not null ? Results.Ok(store.GetPurchases()) : Results.StatusCode(403));
 app.MapPost("/api/products", (ProductInput input, PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is { } user ? store.CreateProduct(input, user.Username) is { } product ? Results.Created("/api/products", product) : Results.BadRequest(new { error = "A valid category, name, SKU, unit, and non-negative price are required." }) : Results.StatusCode(403));
 app.MapPatch("/api/products/{id:int}", (int id, ProductInput input, PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is { } user ? store.UpdateProduct(id, input, user.Username) is { } product ? Results.Ok(product) : Results.NotFound() : Results.StatusCode(403));
 app.MapPatch("/api/products/{id:int}/status", (int id, StatusInput input, PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin") is not null ? store.SetProductStatus(id, input.Active) is { } product ? Results.Ok(product) : Results.NotFound() : Results.StatusCode(403));
 app.MapGet("/api/inventory", (PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager", "cashier") is { } user ? Results.Ok(store.GetInventory(user.LocationId)) : Results.Unauthorized());
 app.MapGet("/api/inventory/reorder", (PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is not null ? Results.Ok(store.GetReorderItems()) : Results.StatusCode(403));
 app.MapPost("/api/inventory/movements", (StockMovementInput input, PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is { } user ? Results.Ok(store.AddStockMovement(input, user.Username)) : Results.StatusCode(403));
+app.MapGet("/api/inventory/movements", (PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is not null ? Results.Ok(store.GetStockMovements()) : Results.StatusCode(403));
 app.MapPatch("/api/inventory/{productId:int}/reorder-level", (int productId, ReorderLevelInput input, PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is not null ? Results.Ok(store.UpdateReorderLevel(productId, input.LocationId, input.ReorderLevel)) : Results.StatusCode(403));
 app.MapGet("/api/recipes", (PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is not null ? Results.Ok(store.GetRecipes()) : Results.StatusCode(403));
 app.MapPost("/api/recipes", (RecipeInput input, PosStore store, HttpRequest request, SessionStore sessions) => Authorized(request, sessions, "admin", "manager") is not null ? Results.Ok(store.CreateRecipe(input)) : Results.StatusCode(403));
@@ -74,6 +76,8 @@ public sealed record Vendor(int Id, string Name, string DisplayName, string? Ema
 public sealed record VendorInput(string Name, string DisplayName, string? Email, string? Phone, string? Gstin, string? Address, string? PaymentTerms);
 public sealed record PurchaseLineInput(int ProductId, decimal Quantity, decimal UnitCost, string? BatchNumber, DateTimeOffset? ExpiryDate);
 public sealed record PurchaseInput(int VendorId, int LocationId, string Reference, IReadOnlyList<PurchaseLineInput> Lines);
+public sealed record PurchaseLineRecord(int ProductId, string ProductName, decimal Quantity, decimal UnitCost, string? BatchNumber, DateTimeOffset? ExpiryDate);
+public sealed record PurchaseRecord(long Id, int VendorId, string VendorName, int LocationId, string LocationName, string Reference, string ReceivedBy, DateTimeOffset ReceivedAt, decimal TotalCost, IReadOnlyList<PurchaseLineRecord> Lines);
 public sealed record InventoryItem(int ProductId, string Sku, string ProductName, int LocationId, string LocationName, decimal OnHand, decimal ReorderLevel, string Unit, bool NeedsReorder);
 public sealed record StockMovementInput(int ProductId, int LocationId, decimal Quantity, string Type, string? BatchNumber, string? Reason);
 public sealed record ReorderLevelInput(int LocationId, decimal ReorderLevel);
@@ -83,6 +87,7 @@ public sealed record Recipe(int Id, string Name, int OutputProductId, IReadOnlyL
 public sealed record ProductionBatchInput(int RecipeId, int LocationId, decimal QuantityProduced, DateTimeOffset? ExpiresAt);
 public sealed record ProductionBatch(long Id, int RecipeId, int LocationId, decimal QuantityProduced, DateTimeOffset? ExpiresAt, DateTimeOffset CreatedAt);
 public sealed record StockMovement(long Id, int ProductId, int LocationId, decimal Quantity, string Type, string? BatchNumber, string? Reason, string Actor, DateTimeOffset CreatedAt);
+public sealed record StockMovementRecord(long Id, string Sku, string ProductName, string LocationName, decimal Quantity, string Type, string? Reason, string Actor, DateTimeOffset CreatedAt);
 public sealed record OrderLineInput(int ProductId, int Quantity);
 public sealed record OrderInput(string RegisterId, string OrderType, string PaymentMethod, IReadOnlyList<OrderLineInput> Lines);
 public sealed record Order(Guid Id, string OrderNumber, string RegisterId, string OrderType, string PaymentMethod, string Status, decimal Subtotal, decimal Tax, decimal Total, DateTimeOffset CreatedAt, IReadOnlyList<OrderLine> Lines);
@@ -215,8 +220,26 @@ public sealed class PosStore
         transaction.Commit(); return new(id, number, input.RegisterId, input.OrderType, input.PaymentMethod, "paid", subtotal, tax, total, DateTimeOffset.UtcNow, lines);
     }
 
-    public IReadOnlyList<Order> GetRecentOrders() => Query("SELECT id,order_number,register_id,order_type,payment_method,status,subtotal,tax,total,created_at FROM orders ORDER BY created_at DESC LIMIT 50", reader => new Order(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetDecimal(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.GetFieldValue<DateTimeOffset>(9), []));
+    public IReadOnlyList<Order> GetRecentOrders()
+    {
+        var orders = Query("SELECT id,order_number,register_id,order_type,payment_method,status,subtotal,tax,total,created_at FROM orders ORDER BY created_at DESC LIMIT 50", reader => new Order(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetDecimal(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.GetFieldValue<DateTimeOffset>(9), []));
+        if (orders.Count == 0) return orders;
+        var lines = Query("SELECT ol.order_id, ol.product_id, p.name, ol.unit_price, ol.quantity FROM order_lines ol JOIN products p ON p.id = ol.product_id WHERE ol.order_id = ANY(SELECT id FROM orders ORDER BY created_at DESC LIMIT 50)", reader => (OrderId: reader.GetGuid(0), Line: new OrderLine(reader.GetInt32(1), reader.GetString(2), reader.GetDecimal(3), reader.GetInt32(4))));
+        var grouped = lines.GroupBy(entry => entry.OrderId).ToDictionary(group => group.Key, group => (IReadOnlyList<OrderLine>)group.Select(entry => entry.Line).ToList());
+        return orders.Select(order => order with { Lines = grouped.TryGetValue(order.Id, out var orderLines) ? orderLines : [] }).ToList();
+    }
     public SyncResult Sync(SyncRequest request, User user) { var accepted = request.Orders.Count(order => CreateOrder(order, user) is not null); return new(request.DeviceId, accepted, request.Orders.Count - accepted, DateTimeOffset.UtcNow); }
+
+    public IReadOnlyList<PurchaseRecord> GetPurchases()
+    {
+        var purchases = Query("SELECT pu.id, pu.vendor_id, v.display_name, pu.location_id, l.name, pu.reference, pu.received_by, pu.received_at FROM purchases pu JOIN vendors v ON v.id = pu.vendor_id JOIN locations l ON l.id = pu.location_id ORDER BY pu.received_at DESC LIMIT 100", reader => new PurchaseRecord(reader.GetInt64(0), reader.GetInt32(1), reader.GetString(2), reader.GetInt32(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetFieldValue<DateTimeOffset>(7), 0, []));
+        if (purchases.Count == 0) return purchases;
+        var lines = Query("SELECT pl.purchase_id, pl.product_id, p.name, pl.quantity, pl.unit_cost, pl.batch_number, pl.expiry_date FROM purchase_lines pl JOIN products p ON p.id = pl.product_id WHERE pl.purchase_id = ANY(SELECT id FROM purchases ORDER BY received_at DESC LIMIT 100)", reader => (PurchaseId: reader.GetInt64(0), Line: new PurchaseLineRecord(reader.GetInt32(1), reader.GetString(2), reader.GetDecimal(3), reader.GetDecimal(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6))));
+        var grouped = lines.GroupBy(entry => entry.PurchaseId).ToDictionary(group => group.Key, group => group.Select(entry => entry.Line).ToList());
+        return purchases.Select(purchase => { var purchaseLines = grouped.TryGetValue(purchase.Id, out var found) ? found : new List<PurchaseLineRecord>(); var total = purchaseLines.Sum(line => line.Quantity * line.UnitCost); return purchase with { Lines = purchaseLines, TotalCost = total }; }).ToList();
+    }
+
+    public IReadOnlyList<StockMovementRecord> GetStockMovements() => Query("SELECT sm.id, p.sku, p.name, l.name, sm.quantity, sm.type, sm.reason, sm.actor, sm.created_at FROM stock_movements sm JOIN products p ON p.id = sm.product_id JOIN locations l ON l.id = sm.location_id ORDER BY sm.created_at DESC LIMIT 300", reader => new StockMovementRecord(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetDecimal(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8)));
 
     private void EnsureSchema()
     {

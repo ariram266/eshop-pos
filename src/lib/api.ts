@@ -16,6 +16,9 @@ export type Vendor = { id: number; name: string; displayName: string; email?: st
 export type PurchaseLineInput = { productId: number; quantity: number; unitCost: number; batchNumber?: string; expiryDate?: string }
 export type PurchaseInput = { vendorId: number; locationId: number; reference: string; lines: PurchaseLineInput[] }
 export type PurchaseReceipt = { id: number; vendorId: number; locationId: number; reference: string; lineCount: number }
+export type PurchaseLineRecord = { productId: number; productName: string; quantity: number; unitCost: number; batchNumber?: string; expiryDate?: string }
+export type PurchaseRecord = { id: number; vendorId: number; vendorName: string; locationId: number; locationName: string; reference: string; receivedBy: string; receivedAt: string; totalCost: number; lines: PurchaseLineRecord[] }
+export type StockMovementRecord = { id: number; sku: string; productName: string; locationName: string; quantity: number; type: string; reason?: string; actor: string; createdAt: string }
 export type LocalOrderLine = { productId: number; name: string; quantity: number; unitPrice: number }
 export type LocalOrder = { id: string; orderNumber: string; registerId: string; paymentMethod: string; total: number; status: string; createdAt: string; lines: LocalOrderLine[] }
 
@@ -37,11 +40,13 @@ export async function fetchProducts() { return request<Product[]>('/api/products
 export async function fetchVendors() { return request<Vendor[]>('/api/vendors') }
 export async function createVendor(input: { name: string; displayName: string; email?: string; phone?: string; gstin?: string; address?: string; paymentTerms?: string }) { return request<Vendor>('/api/vendors', { method: 'POST', body: JSON.stringify(input) }) }
 export async function receivePurchase(input: PurchaseInput) { return request<PurchaseReceipt>('/api/purchases', { method: 'POST', body: JSON.stringify(input) }) }
+export async function fetchPurchases() { return request<PurchaseRecord[]>('/api/purchases') }
 export async function createProduct(input: { sku: string; name: string; categoryId: number; price: number; unit: string; active: boolean; inventoryMode: string; barcode?: string; description?: string; purchasePrice?: number; vendorId?: number; origin?: string; taxRate?: number; hsnCode?: string; gstRate?: number; cgstRate?: number; sgstRate?: number }) { return request<Product>('/api/products', { method: 'POST', body: JSON.stringify(input) }) }
 export async function updateProduct(id: number, input: { sku: string; name: string; categoryId: number; price: number; unit: string; active: boolean; inventoryMode: string; barcode?: string; description?: string; purchasePrice?: number; vendorId?: number; origin?: string; taxRate?: number; hsnCode?: string; gstRate?: number; cgstRate?: number; sgstRate?: number }) { return request<Product>(`/api/products/${id}`, { method: 'PATCH', body: JSON.stringify(input) }) }
 export async function fetchInventory() { return request<InventoryItem[]>('/api/inventory') }
 export async function fetchReorderItems() { return request<InventoryItem[]>('/api/inventory/reorder') }
 export async function addStockMovement(input: { productId: number; locationId: number; quantity: number; type: string; batchNumber?: string; reason?: string }) { return request('/api/inventory/movements', { method: 'POST', body: JSON.stringify(input) }) }
+export async function fetchStockMovements() { return request<StockMovementRecord[]>('/api/inventory/movements') }
 export async function updateReorderLevel(productId: number, locationId: number, reorderLevel: number) { return request<InventoryItem>(`/api/inventory/${productId}/reorder-level`, { method: 'PATCH', body: JSON.stringify({ locationId, reorderLevel }) }) }
 export async function createOrder(input: { registerId: string; orderType: string; paymentMethod: string; lines: Array<{ productId: number; quantity: number }> }) { return request<Order>('/api/orders', { method: 'POST', body: JSON.stringify(input) }) }
 export async function fetchOrders() { return request<Order[]>('/api/orders') }
