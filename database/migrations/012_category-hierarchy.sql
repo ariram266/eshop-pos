@@ -1,0 +1,2 @@
+IF COL_LENGTH('Categories', 'ParentId') IS NULL EXEC(N'ALTER TABLE Categories ADD ParentId uniqueidentifier NULL');
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_Categories_Parent') ALTER TABLE Categories ADD CONSTRAINT FK_Categories_Parent FOREIGN KEY (ParentId) REFERENCES Categories(Id);

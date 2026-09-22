@@ -15,6 +15,10 @@ public sealed class CatalogFunctions(TenantContext tenantContext, AuthorizationS
     public async Task<HttpResponseData> CreateCategory([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "categories")] HttpRequestData request, CancellationToken cancellationToken)
         => await Execute(request, cancellationToken, async actor => await catalog.CreateCategoryAsync(actor, await Body<CreateCategoryRequest>(request, cancellationToken), cancellationToken));
 
+    [Function("UpdateCategory")]
+    public async Task<HttpResponseData> UpdateCategory([HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "categories/{id:guid}")] HttpRequestData request, Guid id, CancellationToken cancellationToken)
+        => await Execute(request, cancellationToken, async actor => await catalog.UpdateCategoryAsync(actor, id, await Body<UpdateCategoryRequest>(request, cancellationToken), cancellationToken));
+
     [Function("CreateProduct")]
     public async Task<HttpResponseData> CreateProduct([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "products")] HttpRequestData request, CancellationToken cancellationToken)
         => await Execute(request, cancellationToken, async actor => await catalog.CreateProductAsync(actor, await Body<CreateProductRequest>(request, cancellationToken), cancellationToken));

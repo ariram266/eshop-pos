@@ -1,0 +1,2 @@
+IF COL_LENGTH('Products', 'TrackInventory') IS NULL EXEC(N'ALTER TABLE Products ADD TrackInventory bit NOT NULL CONSTRAINT DF_Products_TrackInventory DEFAULT 1');
+EXEC(N'UPDATE Products SET TrackInventory = 0 WHERE ProductType IN (''PREPARED_PRODUCT'', ''MENU_ITEM'', ''SERVICE'', ''NON_STOCK'')');

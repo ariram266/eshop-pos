@@ -636,6 +636,8 @@ Category
 
 Supports hierarchical categories.
 
+Categories are general across business areas. A tenant may create top-level departments such as `Cafe`, `Grocery`, and `Farm Produce`, then add subcategories such as `Hot Drinks`, `Cold Drinks`, `Fresh Juice`, `Live Snacks`, `Tiffin`, `Vegetables`, `Fruits`, `Dairy`, `Grains`, `Leafy Greens`, and `Root Crops`. `ParentId` is optional. Category deactivation is soft: inactive categories are excluded from active bootstrap and new product selection, while existing products and historical records remain preserved.
+
 * * *
 
 Product
@@ -684,6 +686,10 @@ Product types:
     
 
 `SERVICE` allows future tourism features to reuse the commerce model.
+
+Examples of non-purchased catalog items include a `SERVICE` such as table service, delivery fee, equipment rental, or a guided farm visit, and a `NON_STOCK` item such as a gift wrap charge, custom message, donation, or digital voucher. These items may be sold but do not represent purchased inventory and must not be received through purchasing.
+
+Inventory tracking is explicit. `STOCKED_PRODUCT` is used for raw materials and other purchased stock; `MERCHANDISE` is used for purchased finished goods for resale. `PREPARED_PRODUCT` and `MENU_ITEM` represent items made or assembled from tracked inputs and do not receive direct purchase stock. `SERVICE` and `NON_STOCK` never create inventory balances. Purchase receiving accepts only products with `track_inventory = true`.
 
 * * *
 
@@ -1422,9 +1428,18 @@ The bootstrap endpoint exists to avoid unnecessary API calls during normal POS u
     
     GET  /api/purchases
     POST /api/purchases
+    PATCH /api/purchases/{id}
     
     GET  /api/production-batches
     POST /api/production-batches
+
+Supplier and received-purchase administration is organization-scoped. Vendors are editable through `PATCH /api/suppliers/{id}`. Editing a received purchase is transactional: the previous receipt quantity is reversed, the replacement lines are applied, and both inventory changes are recorded as stock movements. The operation is rejected when reversing the previous receipt would make on-hand inventory negative.
+
+Operational views provide catalog filters by name/SKU, category, and HSN. Purchase and sales history views provide name/reference search, daily/weekly/monthly/custom date filters, and grouping selectors for name, category, HSN, and invoice/reference. Vendors and Purchases are separate subviews under Operations. KDS remains a separate operational mode and is not duplicated inside the POS screen. POS ordering allows active tracked and non-tracked products; tracked products require inventory and create stock movements, while non-tracked prepared/service/non-stock products create order lines without inventory mutation.
+
+Catalog administration is split into Categories and Products subviews. Each admin subview places its create/edit form beside the corresponding list on wide screens and stacks them responsively on narrow screens. Active non-tracked products remain visible and orderable in POS for prepared, service, and non-stock sales, but never create inventory balances, stock movements, or reorder calculations.
+
+Initial deployment role menu policy: `OrganizationOwner`, `OperationsManager`, and `StoreManager` receive the full POS, KDS, Catalog, and Operations menus. `Cashier` receives POS and purchase receiving only. Cashier purchase receiving uses `inventory.purchase.receive`; purchase editing remains restricted to the stronger inventory adjustment permission.
     
 
 * * *

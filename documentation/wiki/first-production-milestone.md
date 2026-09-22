@@ -22,4 +22,4 @@ Included in this milestone:
 - Correlation-aware health endpoint
 - .NET, frontend, migration, Bicep, and dependency CI gates
 
-Not part of this milestone: customer commerce, farm operations, purchasing, recipes, production, reporting, refunds, and booking. Those remain after the first production milestone in the updated specification.
+Not part of this milestone: customer commerce, farm operations beyond the current inventory/vendor receiving slice, recipes, production, and booking. The current implementation also includes vendor and purchase receiving/editing plus sales reporting as operational extensions; full purchasing, production, and finance workflows remain future scope.

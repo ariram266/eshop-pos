@@ -2,8 +2,7 @@ namespace Counterpoint.Contracts;
 
 public sealed record ActorContext(Guid OrganizationId, Guid UserId, Guid LocationId, string Role, string DisplayName);
 public sealed record PosBootstrap(IReadOnlyList<CategoryDto> Categories, IReadOnlyList<ProductDto> Products, IReadOnlyList<ModifierGroupDto> ModifierGroups, IReadOnlyList<ModifierDto> Modifiers, IReadOnlyList<TaxRuleDto> TaxRules, IReadOnlyList<PreparationStationDto> PreparationStations, Guid LocationId, string Currency);
-public sealed record CategoryDto(Guid Id, string Name);
-public sealed record ProductDto(Guid Id, string Sku, string Name, Guid CategoryId, decimal Price, string Unit, decimal AvailableQuantity, string ProductType, Guid? PreparationStationId, decimal TaxRate, bool Active, string? HsnCode = null, decimal GstRate = 0, decimal CgstRate = 0, decimal SgstRate = 0);
+public sealed record ProductDto(Guid Id, string Sku, string Name, Guid CategoryId, decimal Price, string Unit, decimal AvailableQuantity, string ProductType, Guid? PreparationStationId, decimal TaxRate, bool Active, string? HsnCode = null, decimal GstRate = 0, decimal CgstRate = 0, decimal SgstRate = 0, bool TrackInventory = true);
 public sealed record TaxRuleDto(Guid Id, string Name, decimal Rate);
 public sealed record PreparationStationDto(Guid Id, string Name, string Code);
 public sealed record ModifierGroupDto(Guid Id, string Name, bool Required);

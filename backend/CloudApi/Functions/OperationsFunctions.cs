@@ -16,8 +16,17 @@ public sealed class OperationsFunctions(TenantContext tenantContext, Authorizati
     [Function("CreateSupplier")]
     public async Task<HttpResponseData> CreateSupplier([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "suppliers")] HttpRequestData request, CancellationToken cancellationToken) => await Execute(request, cancellationToken, "catalog.write", async actor => await operations.CreateSupplierAsync(actor, await Body<CreateSupplierRequest>(request, cancellationToken), cancellationToken));
 
+    [Function("UpdateSupplier")]
+    public async Task<HttpResponseData> UpdateSupplier([HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "suppliers/{id:guid}")] HttpRequestData request, Guid id, CancellationToken cancellationToken) => await Execute(request, cancellationToken, "catalog.write", async actor => await operations.UpdateSupplierAsync(actor, id, await Body<UpdateSupplierRequest>(request, cancellationToken), cancellationToken));
+
+    [Function("ListPurchases")]
+    public Task<HttpResponseData> Purchases([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "purchases")] HttpRequestData request, CancellationToken cancellationToken) => Execute(request, cancellationToken, "inventory.read", actor => operations.GetPurchasesAsync(actor, cancellationToken));
+
     [Function("ReceivePurchase")]
-    public async Task<HttpResponseData> ReceivePurchase([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "purchases/receive")] HttpRequestData request, CancellationToken cancellationToken) => await Execute(request, cancellationToken, "inventory.adjust", async actor => await operations.ReceivePurchaseAsync(actor, await Body<CreatePurchaseRequest>(request, cancellationToken), cancellationToken));
+    public async Task<HttpResponseData> ReceivePurchase([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "purchases/receive")] HttpRequestData request, CancellationToken cancellationToken) => await Execute(request, cancellationToken, "inventory.purchase.receive", async actor => await operations.ReceivePurchaseAsync(actor, await Body<CreatePurchaseRequest>(request, cancellationToken), cancellationToken));
+
+    [Function("UpdatePurchase")]
+    public async Task<HttpResponseData> UpdatePurchase([HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "purchases/{id:guid}")] HttpRequestData request, Guid id, CancellationToken cancellationToken) => await Execute(request, cancellationToken, "inventory.adjust", async actor => await operations.UpdatePurchaseAsync(actor, id, await Body<CreatePurchaseRequest>(request, cancellationToken), cancellationToken));
 
     [Function("InventorySummary")]
     public Task<HttpResponseData> Inventory([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "inventory")] HttpRequestData request, CancellationToken cancellationToken) => Execute(request, cancellationToken, "inventory.read", actor => operations.GetInventoryAsync(actor, cancellationToken));
