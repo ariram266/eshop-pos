@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createCategory, createOrder, createProduct, fetchActiveKds, fetchActor, fetchPosBootstrap, printReceipt, signOut, startEntraLogin, updateCategory, updateKdsStatus, updateProduct, type Actor, type Category, type KdsWorkItem, type Order, type PosBootstrap, type Product } from './lib/api'
-import { initializeAuth, isLocalDevelopment } from './lib/auth'
+import { getPreferredLocalDevRole, initializeAuth, isLocalDevelopment, LOCAL_DEV_ROLES, setPreferredLocalDevRole } from './lib/auth'
 import { CatalogView } from './CatalogView'
 import { OperationsView } from './OperationsView'
 import './styles.css'
@@ -21,6 +21,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [lastOrder, setLastOrder] = useState<Order | null>(null)
+  const [localRole, setLocalRole] = useState<string>(getPreferredLocalDevRole())
   const [mode, setMode] = useState<'pos' | 'kds' | 'catalog' | 'operations'>('pos')
   const [categoryName, setCategoryName] = useState('')
   const [categoryParentId, setCategoryParentId] = useState('')
@@ -44,7 +45,13 @@ export default function App() {
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    if (isLocalDevelopment) {
+      setLoading(false)
+      return
+    }
+    void load()
+  }, [])
   useEffect(() => {
     if (!actor) return
     const timer = window.setInterval(() => { void fetchActiveKds().then(setKdsItems).catch(() => undefined) }, 15000)
@@ -85,14 +92,22 @@ export default function App() {
   const cancelProductEdit = () => { setEditingProductId(null); setProductForm({ sku: '', name: '', categoryId: '', price: '', unit: 'each', productType: 'MENU_ITEM', hsnCode: '', gstRate: '', trackInventory: false }) }
 
   if (loading) return <main className="login-screen"><section className="login-card"><div className="brand-mark">CP</div><p className="eyebrow">Counterpoint cloud POS</p><h1>Loading secure workspace</h1><p className="login-copy">Resolving your organization, location, catalog, and permissions.</p></section></main>
-  if (!actor || !bootstrap) return <main className="login-screen"><section className="login-card"><div className="brand-mark">CP</div><p className="eyebrow">Counterpoint cloud POS</p><h1>{isLocalDevelopment ? 'Local development access' : 'Sign in to continue'}</h1><p className="login-copy">{isLocalDevelopment ? 'Using the guarded Development-only actor. No Microsoft Entra login is required locally.' : 'Use your Microsoft Entra account. POS transactions require a live connection to the cloud service.'}</p>{error && <p className="form-error">{error}</p>}<button className="primary-button" onClick={() => isLocalDevelopment ? void load() : void startEntraLogin().catch(caught => setError(caught instanceof Error ? caught.message : 'Sign-in could not start'))}>{isLocalDevelopment ? 'Continue locally' : 'Sign in with Microsoft'}</button></section></main>
+  if (!actor || !bootstrap) return <main className="login-screen"><section className="login-card"><div className="brand-mark">CP</div><p className="eyebrow">Counterpoint cloud POS</p><h1>{isLocalDevelopment ? 'Local development access' : 'Sign in to continue'}</h1><p className="login-copy">{isLocalDevelopment ? 'Choose a local role for the guarded Development-only actor. No Microsoft Entra login is required locally.' : 'Use your Microsoft Entra account. POS transactions require a live connection to the cloud service.'}</p>{error && <p className="form-error">{error}</p>}{isLocalDevelopment && <label className="payment-select" style={{ marginBottom: '1rem' }}>Local role<select value={localRole} onChange={event => { const nextRole = event.target.value || getPreferredLocalDevRole(); setLocalRole(nextRole); setPreferredLocalDevRole(nextRole) }}><option value="">Select role</option>{LOCAL_DEV_ROLES.map(role => <option key={role} value={role}>{role}</option>)}</select></label>}<button className="primary-button" disabled={isLocalDevelopment && !localRole} onClick={() => {
+      if (isLocalDevelopment) {
+        const nextRole = setPreferredLocalDevRole(localRole)
+        setLocalRole(nextRole)
+        void load()
+        return
+      }
+      void startEntraLogin().catch(caught => setError(caught instanceof Error ? caught.message : 'Sign-in could not start'))
+    }}>{isLocalDevelopment ? 'Continue locally' : 'Sign in with Microsoft'}</button></section></main>
 
   return <div className="operations-app">
     <header className="operations-header"><div><div className="brand-line"><span className="brand-mark">CP</span><strong>Counterpoint</strong></div><span className="location-label">{actor.locationId} · {registerCode}</span></div><div className="session"><span className="online-dot" />{actor.displayName}<span className="role-badge">{actor.role}</span><button onClick={signOut}>Sign out</button></div></header>
     <main className="operations-main phase1-main">
       <div className="page-title"><div><h1>Point of sale</h1></div></div>
-      <div className="report-tabs primary-menu"><button className={mode === 'pos' ? 'active' : ''} onClick={() => setMode('pos')}>POS</button>{actor.role !== 'Cashier' && actor.role !== 'CounterStaff' && <button className={mode === 'kds' ? 'active' : ''} onClick={() => setMode('kds')}>KDS</button>}{(actor.role === 'OrganizationOwner' || actor.role === 'OperationsManager' || actor.role === 'StoreManager' || isLocalDevelopment) && <><button className={mode === 'catalog' ? 'active' : ''} onClick={() => setMode('catalog')}>Catalog</button><button className={mode === 'operations' ? 'active' : ''} onClick={() => setMode('operations')}>Operations</button></>}{actor.role === 'Cashier' && <button className={mode === 'operations' ? 'active' : ''} onClick={() => setMode('operations')}>Purchases</button>}</div>
-      {mode === 'kds' ? <KdsView items={kdsItems} onStatus={async (id, status) => { await updateKdsStatus(id, status); setKdsItems(await fetchActiveKds()) }} /> : mode === 'catalog' ? <CatalogView bootstrap={bootstrap} categoryName={categoryName} categoryParentId={categoryParentId} setCategoryName={setCategoryName} setCategoryParentId={setCategoryParentId} addCategory={saveCategory} editingCategoryId={editingCategoryId} onEditCategory={editCategory} onDeactivateCategory={deactivateCategory} onCancelCategoryEdit={cancelCategoryEdit} productForm={productForm} setProductForm={setProductForm} addProduct={saveProduct} editingProductId={editingProductId} onEdit={editProduct} onCancelEdit={cancelProductEdit} /> : mode === 'operations' ? <OperationsView bootstrap={bootstrap} locationId={actor.locationId} role={actor.role} initialTab={actor.role === 'Cashier' ? 'purchases' : 'inventory'} onNotice={setNotice} /> : <>
+      <div className="report-tabs primary-menu"><button className={mode === 'pos' ? 'active' : ''} onClick={() => setMode('pos')}>POS</button>{actor.role !== 'Cashier' && actor.role !== 'CounterStaff' && <button className={mode === 'kds' ? 'active' : ''} onClick={() => setMode('kds')}>KDS</button>}{(actor.role === 'OrganizationOwner' || actor.role === 'OperationsManager' || actor.role === 'StoreManager') && <><button className={mode === 'catalog' ? 'active' : ''} onClick={() => setMode('catalog')}>Catalog</button><button className={mode === 'operations' ? 'active' : ''} onClick={() => setMode('operations')}>Operations</button></>}{(actor.role === 'Cashier' || actor.role === 'CounterStaff') && <button className={mode === 'operations' ? 'active' : ''} onClick={() => setMode('operations')}>Purchases</button>}</div>
+      {mode === 'kds' ? <KdsView items={kdsItems} onStatus={async (id, status) => { await updateKdsStatus(id, status); setKdsItems(await fetchActiveKds()) }} /> : mode === 'catalog' ? <CatalogView bootstrap={bootstrap} categoryName={categoryName} categoryParentId={categoryParentId} setCategoryName={setCategoryName} setCategoryParentId={setCategoryParentId} addCategory={saveCategory} editingCategoryId={editingCategoryId} onEditCategory={editCategory} onDeactivateCategory={deactivateCategory} onCancelCategoryEdit={cancelCategoryEdit} productForm={productForm} setProductForm={setProductForm} addProduct={saveProduct} editingProductId={editingProductId} onEdit={editProduct} onCancelEdit={cancelProductEdit} /> : mode === 'operations' ? <OperationsView bootstrap={bootstrap} locationId={actor.locationId} role={actor.role} initialTab={(actor.role === 'Cashier' || actor.role === 'CounterStaff') ? 'purchases' : 'inventory'} onNotice={setNotice} /> : <>
       <div className="phase1-layout">
         <section><div className="section-heading"><div><p className="eyebrow">Catalog</p><h2>Select products</h2></div><button className="secondary-button" onClick={() => void load()}>Refresh</button></div><div className="catalog-filters"><input className="wide-search" placeholder="Search SKU or product" value={query} onChange={event => setQuery(event.target.value)} /><select aria-label="Filter catalog by inventory" value={inventoryOnly ? 'tracked' : ''} onChange={event => setInventoryOnly(event.target.value === 'tracked')}><option value="">All products</option><option value="tracked">Inventory tracked</option></select></div><div className="real-product-grid">{products.map(product => <button className="real-product" key={product.id} disabled={product.trackInventory && product.availableQuantity <= 0} onClick={() => addToCart(product)}><span>{product.sku}</span><strong>{product.name}</strong><small>{!product.trackInventory ? 'Prepared / no stock tracking' : `${money(product.price)} · ${product.availableQuantity} ${product.unit}`}</small></button>)}</div>{!products.length && <div className="empty-panel">No products are available at this location.</div>}</section>
         <aside className="sale-panel"><div className="panel-heading"><div><p className="eyebrow">Current order</p><h2>{cart.length ? `${cart.reduce((sum, line) => sum + line.quantity, 0)} items` : 'Empty order'}</h2></div><button onClick={() => setCart([])}>Clear</button></div><div className="sale-lines">{cart.map(line => <div className="sale-line" key={line.product.id}><div><strong>{line.product.name}</strong><small>{money(line.product.price)} each</small></div><div className="stepper"><button onClick={() => changeQuantity(line.product.id, -1)}>-</button><span>{line.quantity}</span><button onClick={() => changeQuantity(line.product.id, 1)} disabled={line.product.trackInventory && line.quantity >= line.product.availableQuantity}>+</button></div><b>{money(line.product.price * line.quantity)}</b></div>)}</div><div className="sale-total"><span>Subtotal</span><b>{money(subtotal)}</b><span>Tax</span><b>{money(tax)}</b><strong>Total</strong><strong>{money(total)}</strong></div><label className="payment-select">Payment<select value={paymentMethod} onChange={event => setPaymentMethod(event.target.value)}><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="OTHER">Other</option></select></label><button className="primary-button" disabled={!cart.length} onClick={() => void completeSale()}>Take payment</button></aside>

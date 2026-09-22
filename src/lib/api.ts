@@ -1,5 +1,5 @@
 const cloudApi = import.meta.env.VITE_CLOUD_API_URL || ''
-import { accessToken, signOut, startEntraLogin } from './auth'
+import { accessToken, getPreferredLocalDevRole, isLocalDevelopment, signOut, startEntraLogin } from './auth'
 
 export type Actor = { organizationId: string; userId: string; locationId: string; role: string; displayName: string }
 export type Product = { id: string; sku: string; name: string; categoryId: string; price: number; unit: string; availableQuantity: number; productType: string; preparationStationId?: string; taxRate: number; active: boolean; hsnCode?: string; gstRate: number; cgstRate: number; sgstRate: number; trackInventory: boolean }
@@ -24,9 +24,11 @@ export type SalesSummary = { orderCount: number; grossSales: number; tax: number
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await accessToken()
+  const localRoleValue = isLocalDevelopment ? getPreferredLocalDevRole() : ''
+  const localRoleHeader: Record<string, string> = localRoleValue ? { 'X-Local-Dev-Role': localRoleValue } : {}
   const response = await fetch(`${cloudApi}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers },
+    headers: { 'Content-Type': 'application/json', ...localRoleHeader, ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers },
   })
   if (response.status === 401) throw new Error('Authentication required')
   if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`)

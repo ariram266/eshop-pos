@@ -11,7 +11,10 @@ public sealed class TenantContext(IConfiguration configuration)
     public ActorContext Resolve(HttpRequestData request)
     {
         if (configuration["AZURE_FUNCTIONS_ENVIRONMENT"] == "Development" && configuration.GetValue<bool>("COUNTERPOINT_LOCAL_DEV_AUTH"))
-            return new ActorContext(LocalIds.Organization, LocalIds.User, LocalIds.Location, "OrganizationOwner", "Local Development User");
+        {
+            var localRole = GetLocalDevRole(request);
+            return new ActorContext(LocalIds.Organization, LocalIds.User, LocalIds.Location, localRole, $"Local Development {localRole}");
+        }
 
         var principal = new ClaimsPrincipal(request.Identities);
         var claims = principal?.Claims ?? Enumerable.Empty<Claim>();
@@ -25,6 +28,18 @@ public sealed class TenantContext(IConfiguration configuration)
             throw new UnauthorizedAccessException("Verified organization, user, location, and role claims are required.");
 
         return new ActorContext(organization.Value, user.Value, location.Value, role, name ?? user.Value.ToString());
+    }
+
+    private static string GetLocalDevRole(HttpRequestData request)
+    {
+        if (request.Headers.TryGetValues("X-Local-Dev-Role", out var values))
+        {
+            var requestedRole = values.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(requestedRole))
+                return requestedRole.Trim();
+        }
+
+        return "OrganizationOwner";
     }
 
     private static class LocalIds

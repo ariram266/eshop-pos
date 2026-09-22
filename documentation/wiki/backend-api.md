@@ -41,4 +41,4 @@ The current frontend provides catalog filters by name/SKU, category, and HSN, pl
 
 Catalog administration is presented as separate Categories and Products subviews. Non-tracked active products are displayed as orderable prepared/service/non-stock items; only tracked products are subject to stock availability checks and inventory deduction.
 
-Initial role policy: admin-capable roles receive all menus; Cashier receives POS and purchase receiving only. Cashier receiving uses `inventory.purchase.receive`, while purchase edits require `inventory.adjust`.
+Initial role policy: `OrganizationOwner`, `OperationsManager`, and `StoreManager` receive the full POS, KDS, Catalog, and Operations menus. `Cashier` receives POS and purchase receiving only. Cashier purchase receiving uses `inventory.purchase.receive`, while purchase editing remains restricted to the stronger `inventory.adjust` permission.

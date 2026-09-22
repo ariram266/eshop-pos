@@ -1,5 +1,9 @@
 import { PublicClientApplication, type AccountInfo } from '@azure/msal-browser'
 
+export const LOCAL_DEV_ROLES = ['OrganizationOwner', 'OperationsManager', 'StoreManager', 'Cashier', 'KitchenStaff', 'Accountant', 'Customer'] as const
+export type LocalDevRole = (typeof LOCAL_DEV_ROLES)[number]
+
+const LOCAL_ROLE_STORAGE_KEY = 'counterpoint.local-dev-role'
 const clientId = import.meta.env.VITE_ENTRA_CLIENT_ID as string | undefined
 const tenantId = import.meta.env.VITE_ENTRA_TENANT_ID as string | undefined
 const apiClientId = import.meta.env.VITE_ENTRA_API_CLIENT_ID as string | undefined
@@ -9,6 +13,25 @@ export const isLocalDevelopment = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/
 
 const client = clientId && authority ? new PublicClientApplication({ auth: { clientId, authority, redirectUri: window.location.origin } }) : null
 let activeAccount: AccountInfo | null = null
+
+export function getPreferredLocalDevRole(): LocalDevRole {
+  try {
+    const stored = window.localStorage.getItem(LOCAL_ROLE_STORAGE_KEY)
+    return LOCAL_DEV_ROLES.includes(stored as LocalDevRole) ? (stored as LocalDevRole) : 'OrganizationOwner'
+  } catch {
+    return 'OrganizationOwner'
+  }
+}
+
+export function setPreferredLocalDevRole(role: string) {
+  const nextRole = LOCAL_DEV_ROLES.includes(role as LocalDevRole) ? role as LocalDevRole : 'OrganizationOwner'
+  try {
+    window.localStorage.setItem(LOCAL_ROLE_STORAGE_KEY, nextRole)
+  } catch {
+    // localStorage is optional in some restricted browser contexts
+  }
+  return nextRole
+}
 
 export async function initializeAuth() {
   if (!client) return
