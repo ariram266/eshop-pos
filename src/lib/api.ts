@@ -1,69 +1,59 @@
-const cloudApi = import.meta.env.VITE_CLOUD_API_URL ?? 'http://localhost:5080'
-const agentApi = import.meta.env.VITE_AGENT_API_URL ?? 'http://127.0.0.1:9100'
+const cloudApi = import.meta.env.VITE_CLOUD_API_URL || ''
+import { accessToken, signOut, startEntraLogin } from './auth'
 
-export type User = { id: number; username: string; displayName: string; role: 'admin' | 'manager' | 'cashier'; locationId: number }
-export type Product = { id: number; sku: string; name: string; categoryId: number; category: string; price: number; unit: string; stock: number; active: boolean; inventoryMode: 'stocked' | 'prepared'; barcode?: string; description?: string; purchasePrice: number; vendorId?: number; origin?: string; taxRate: number; hsnCode?: string; gstRate: number; cgstRate: number; sgstRate: number }
-export type Category = { id: number; name: string }
-export type InventoryItem = { productId: number; sku: string; productName: string; locationId: number; locationName: string; onHand: number; reorderLevel: number; unit: string; needsReorder: boolean }
-export type OrderLine = { productId: number; name: string; unitPrice: number; quantity: number }
-export type Order = { id: string; orderNumber: string; registerId: string; orderType: string; paymentMethod: string; status: string; subtotal: number; tax: number; total: number; createdAt: string; lines: OrderLine[] }
-export type Recipe = { id: number; name: string; outputProductId: number; ingredients: Array<{ productId: number; quantityPerUnit: number; unit: string }> }
-export type Organization = { name: string; currency: string; timeZone: string }
-export type Location = { id: number; name: string; type: string; active: boolean }
-export type Register = { id: number; registerId: string; name: string; locationId: number; deviceId: string; active: boolean }
-export type UserSummary = { id: number; username: string; displayName: string; role: string; locationId: number; active: boolean }
-export type Vendor = { id: number; name: string; displayName: string; email?: string; phone?: string; gstin?: string; address?: string; paymentTerms?: string; active: boolean }
-export type PurchaseLineInput = { productId: number; quantity: number; unitCost: number; batchNumber?: string; expiryDate?: string }
-export type PurchaseInput = { vendorId: number; locationId: number; reference: string; lines: PurchaseLineInput[] }
-export type PurchaseReceipt = { id: number; vendorId: number; locationId: number; reference: string; lineCount: number }
-export type PurchaseLineRecord = { productId: number; productName: string; quantity: number; unitCost: number; batchNumber?: string; expiryDate?: string }
-export type PurchaseRecord = { id: number; vendorId: number; vendorName: string; locationId: number; locationName: string; reference: string; receivedBy: string; receivedAt: string; totalCost: number; lines: PurchaseLineRecord[] }
-export type StockMovementRecord = { id: number; sku: string; productName: string; locationName: string; quantity: number; type: string; reason?: string; actor: string; createdAt: string }
-export type LocalOrderLine = { productId: number; name: string; quantity: number; unitPrice: number }
-export type LocalOrder = { id: string; orderNumber: string; registerId: string; paymentMethod: string; total: number; status: string; createdAt: string; lines: LocalOrderLine[] }
-
-let token = localStorage.getItem('counterpoint-token') ?? ''
-export const setToken = (value: string) => { token = value; localStorage.setItem('counterpoint-token', value) }
-export const clearToken = () => { token = ''; localStorage.removeItem('counterpoint-token') }
+export type Actor = { organizationId: string; userId: string; locationId: string; role: string; displayName: string }
+export type Product = { id: string; sku: string; name: string; categoryId: string; price: number; unit: string; availableQuantity: number; productType: string; preparationStationId?: string; taxRate: number; active: boolean; hsnCode?: string; gstRate: number; cgstRate: number; sgstRate: number }
+export type Category = { id: string; name: string }
+export type TaxRule = { id: string; name: string; rate: number }
+export type PreparationStation = { id: string; name: string; code: string }
+export type ModifierGroup = { id: string; name: string; required: boolean }
+export type Modifier = { id: string; modifierGroupId: string; name: string; priceDelta: number }
+export type PosBootstrap = { categories: Category[]; products: Product[]; modifierGroups: ModifierGroup[]; modifiers: Modifier[]; taxRules: TaxRule[]; preparationStations: PreparationStation[]; locationId: string; currency: string }
+export type OrderLine = { productId: string; name: string; unitPrice: number; quantity: number; taxAmount: number; preparationStationCode?: string }
+export type Order = { id: string; orderNumber: string; status: string; subtotal: number; tax: number; total: number; paymentStatus: string; lines: OrderLine[]; createdAt: string }
+export type KdsWorkItem = { id: string; orderId: string; orderNumber: string; productName: string; quantity: number; stationCode: string; status: string; createdAt: string }
+export type CatalogProduct = { id: string; sku: string; name: string; categoryId: string; price: number; unit: string; productType: string; active: boolean }
+export type Supplier = { id: string; code: string; name: string; email?: string; phone?: string; active: boolean }
+export type InventorySummary = { productId: string; sku: string; productName: string; onHand: number; reserved: number; available: number; reorderLevel: number; lowStock: boolean }
+export type StockMovement = { id: string; productId: string; productName: string; quantity: number; movementType: string; source?: string; createdAt: string }
+export type SalesHistory = { orderId: string; orderNumber: string; total: number; status: string; paymentStatus: string; createdAt: string }
+export type SalesSummary = { orderCount: number; grossSales: number; tax: number; netSales: number; from: string; to: string }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${cloudApi}${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers } })
-  if (response.status === 401) { clearToken(); throw new Error('Session expired') }
+  const token = await accessToken()
+  const response = await fetch(`${cloudApi}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers },
+  })
+  if (response.status === 401) throw new Error('Authentication required')
   if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`)
   return response.json() as Promise<T>
 }
 
-export async function login(username: string, password: string) { const result = await request<{ token: string; user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }); setToken(result.token); return result.user }
-export async function currentUser() { return request<User>('/api/auth/me') }
-export async function fetchCategories() { return request<Category[]>('/api/categories') }
-export async function fetchProducts() { return request<Product[]>('/api/products') }
-export async function fetchVendors() { return request<Vendor[]>('/api/vendors') }
-export async function createVendor(input: { name: string; displayName: string; email?: string; phone?: string; gstin?: string; address?: string; paymentTerms?: string }) { return request<Vendor>('/api/vendors', { method: 'POST', body: JSON.stringify(input) }) }
-export async function receivePurchase(input: PurchaseInput) { return request<PurchaseReceipt>('/api/purchases', { method: 'POST', body: JSON.stringify(input) }) }
-export async function fetchPurchases() { return request<PurchaseRecord[]>('/api/purchases') }
-export async function createProduct(input: { sku: string; name: string; categoryId: number; price: number; unit: string; active: boolean; inventoryMode: string; barcode?: string; description?: string; purchasePrice?: number; vendorId?: number; origin?: string; taxRate?: number; hsnCode?: string; gstRate?: number; cgstRate?: number; sgstRate?: number }) { return request<Product>('/api/products', { method: 'POST', body: JSON.stringify(input) }) }
-export async function updateProduct(id: number, input: { sku: string; name: string; categoryId: number; price: number; unit: string; active: boolean; inventoryMode: string; barcode?: string; description?: string; purchasePrice?: number; vendorId?: number; origin?: string; taxRate?: number; hsnCode?: string; gstRate?: number; cgstRate?: number; sgstRate?: number }) { return request<Product>(`/api/products/${id}`, { method: 'PATCH', body: JSON.stringify(input) }) }
-export async function fetchInventory() { return request<InventoryItem[]>('/api/inventory') }
-export async function fetchReorderItems() { return request<InventoryItem[]>('/api/inventory/reorder') }
-export async function addStockMovement(input: { productId: number; locationId: number; quantity: number; type: string; batchNumber?: string; reason?: string }) { return request('/api/inventory/movements', { method: 'POST', body: JSON.stringify(input) }) }
-export async function fetchStockMovements() { return request<StockMovementRecord[]>('/api/inventory/movements') }
-export async function updateReorderLevel(productId: number, locationId: number, reorderLevel: number) { return request<InventoryItem>(`/api/inventory/${productId}/reorder-level`, { method: 'PATCH', body: JSON.stringify({ locationId, reorderLevel }) }) }
-export async function createOrder(input: { registerId: string; orderType: string; paymentMethod: string; lines: Array<{ productId: number; quantity: number }> }) { return request<Order>('/api/orders', { method: 'POST', body: JSON.stringify(input) }) }
-export async function fetchOrders() { return request<Order[]>('/api/orders') }
-export async function fetchRecipes() { return request<Recipe[]>('/api/recipes') }
-export async function fetchOrganization() { return request<Organization>('/api/organization') }
-export async function fetchLocations() { return request<Location[]>('/api/locations') }
-export async function createLocation(input: { name: string; type: string }) { return request<Location>('/api/locations', { method: 'POST', body: JSON.stringify(input) }) }
-export async function fetchRegisters() { return request<Register[]>('/api/registers') }
-export async function fetchUsers() { return request<UserSummary[]>('/api/users') }
-export async function updateUserStatus(id: number, active: boolean) { return request<UserSummary>(`/api/users/${id}/status`, { method: 'PATCH', body: JSON.stringify({ active }) }) }
-export async function updateProductStatus(id: number, active: boolean) { return request<Product>(`/api/products/${id}/status`, { method: 'PATCH', body: JSON.stringify({ active }) }) }
-export async function updateLocationStatus(id: number, active: boolean) { return request<Location>(`/api/locations/${id}/status`, { method: 'PATCH', body: JSON.stringify({ active }) }) }
-export async function createRecipe(input: { name: string; outputProductId: number; ingredients: Array<{ productId: number; quantityPerUnit: number; unit: string }> }) { return request<Recipe>('/api/recipes', { method: 'POST', body: JSON.stringify(input) }) }
-export async function produceBatch(input: { recipeId: number; locationId: number; quantityProduced: number; expiresAt?: string }) { return request('/api/production-batches', { method: 'POST', body: JSON.stringify(input) }) }
-export async function sendReceipt(order: Order): Promise<boolean> { if (!navigator.onLine) return false; const response = await fetch(`${agentApi}/print`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: order.id, storeId: order.orderNumber, registerId: order.registerId, lines: order.lines, total: order.total }) }); return response.ok }
-export async function fetchLocalProducts() { const response = await fetch(`${agentApi}/local/products`); if (!response.ok) throw new Error('Local POS Agent unavailable'); return response.json() as Promise<Product[]> }
-export async function createLocalOrder(order: LocalOrder) { const response = await fetch(`${agentApi}/local/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(order) }); if (!response.ok) throw new Error('Local transaction could not be saved'); return response.json() as Promise<LocalOrder> }
-export async function syncCatalogToAgent(products: Product[]) { const response = await fetch(`${agentApi}/local/catalog`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(products) }); if (!response.ok) throw new Error('Local catalog sync failed'); return response.json() as Promise<{ accepted: number }> }
-export async function fetchLocalOrders() { const response = await fetch(`${agentApi}/local/orders`); if (!response.ok) throw new Error('Local POS Agent unavailable'); return response.json() as Promise<LocalOrder[]> }
-export async function syncLocalOrdersToCloud() { const localOrders = await fetchLocalOrders(); const pending = localOrders.filter((order) => order.status === 'queued'); if (!pending.length) return 0; const result = await request<{ accepted: number }>('/api/sync', { method: 'POST', body: JSON.stringify({ deviceId: 'register-03', orders: pending.map((order) => ({ registerId: order.registerId, orderType: 'counter-sale', paymentMethod: order.paymentMethod, lines: order.lines.map((line) => ({ productId: line.productId, quantity: line.quantity })) })) }) }); await fetch(`${agentApi}/local/sync/mark`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderIds: pending.map((order) => order.id) }) }); return result.accepted }
+export const fetchActor = () => request<Actor>('/api/auth/me')
+export const fetchPosBootstrap = () => request<PosBootstrap>('/api/pos/bootstrap')
+export const fetchActiveKds = () => request<KdsWorkItem[]>('/api/kds/orders/active')
+export const updateKdsStatus = (id: string, status: string) => request<KdsWorkItem>(`/api/kds/orders/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) })
+export const createCategory = (name: string) => request<Category>('/api/categories', { method: 'POST', body: JSON.stringify({ name }) })
+export const createProduct = (input: { sku: string; name: string; categoryId: string; price: number; unit: string; productType: string; hsnCode?: string; gstRate: number }) => request<CatalogProduct>('/api/products', { method: 'POST', body: JSON.stringify(input) })
+export const updateProduct = (id: string, input: { sku: string; name: string; categoryId: string; price: number; unit: string; productType: string; hsnCode?: string; gstRate: number; active: boolean }) => request<CatalogProduct>(`/api/products/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+export const fetchSuppliers = () => request<Supplier[]>('/api/suppliers')
+export const createSupplier = (input: { code: string; name: string; email?: string; phone?: string }) => request<Supplier>('/api/suppliers', { method: 'POST', body: JSON.stringify(input) })
+export const receivePurchase = (input: { supplierId: string; locationId: string; reference: string; lines: Array<{ productId: string; quantity: number; unitCost: number }> }) => request<string>('/api/purchases/receive', { method: 'POST', body: JSON.stringify(input) })
+export const fetchInventory = () => request<InventorySummary[]>('/api/inventory')
+export const fetchStockMovements = () => request<StockMovement[]>('/api/stock-movements')
+export const fetchSalesHistory = () => request<SalesHistory[]>('/api/sales')
+export const fetchSalesSummary = () => request<SalesSummary>('/api/reports/sales')
+export const createOrder = (input: { registerId: string; orderType: string; paymentMethod: string; lines: Array<{ productId: string; quantity: number }> }) => request<Order>('/api/orders', { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(input) })
+
+export { signOut, startEntraLogin }
+
+export function printReceipt(order: Order) {
+  const content = [`COUNTERPOINT`, `Order ${order.orderNumber}`, '', ...order.lines.map(line => `${line.quantity} x ${line.name}  ${(line.unitPrice * line.quantity).toFixed(2)}`), '', `TOTAL ${order.total.toFixed(2)}`].join('\n')
+  const printWindow = window.open('', '_blank', 'width=420,height=640')
+  if (!printWindow) return false
+  printWindow.document.body.innerHTML = `<pre>${content}</pre>`
+  printWindow.print()
+  printWindow.close()
+  return true
+}

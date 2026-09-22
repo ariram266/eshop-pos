@@ -1,0 +1,60 @@
+name: Counterpoint CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test -- --run
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+      - run: dotnet build backend/CloudApi/CloudApi.csproj --configuration Release
+      - run: dotnet test backend/CloudApi.Tests/CloudApi.Tests.csproj --configuration Release
+
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check migration ordering
+        shell: bash
+        run: |
+          files=$(find database/migrations -maxdepth 1 -name '[0-9][0-9][0-9]_*.sql' | sort)
+          test "$(printf '%s\n' "$files" | wc -l | tr -d ' ')" -ge 8
+          test "$(printf '%s\n' "$files" | sed -E 's#.*/([0-9]{3})_.*#\1#' | sort -u | wc -l | tr -d ' ')" = "$(printf '%s\n' "$files" | wc -l | tr -d ' ')"
+      - name: Validate Bicep syntax
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: az bicep build --file infrastructure/main.bicep --stdout > /dev/null
+
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high

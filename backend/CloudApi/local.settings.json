@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Host": {
+    "CORS": "http://127.0.0.1:5173,http://127.0.0.1:5174"
+  },
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "AZURE_FUNCTIONS_ENVIRONMENT": "Development",
+    "COUNTERPOINT_LOCAL_DEV_AUTH": "true",
+    "AZURE_SQL_CONNECTION_STRING": "Server=localhost,1433;Initial Catalog=counterpoint;User ID=sa;Password=CounterpointDev_123!;TrustServerCertificate=True;Encrypt=False"
+  }
+}
