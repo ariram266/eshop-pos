@@ -29,7 +29,7 @@ public sealed class CatalogFunctions(TenantContext tenantContext, AuthorizationS
 
     private async Task<HttpResponseData> Execute<T>(HttpRequestData request, CancellationToken cancellationToken, Func<ActorContext, Task<T>> action)
     {
-        try { var actor = tenantContext.Resolve(request); await authorization.RequirePermissionAsync(actor, "catalog.write", cancellationToken); var response = request.CreateResponse(HttpStatusCode.Created); await response.WriteAsJsonAsync(await action(actor), cancellationToken); return response; }
+        try { var actor = await tenantContext.ResolveAsync(request, cancellationToken); await authorization.RequirePermissionAsync(actor, "catalog.write", cancellationToken); var response = request.CreateResponse(HttpStatusCode.Created); await response.WriteAsJsonAsync(await action(actor), cancellationToken); return response; }
         catch (Exception exception) when (exception is UnauthorizedAccessException or ForbiddenException or ArgumentException or KeyNotFoundException or SqlException) { var response = request.CreateResponse(exception is UnauthorizedAccessException ? HttpStatusCode.Unauthorized : exception is ForbiddenException ? HttpStatusCode.Forbidden : exception is KeyNotFoundException ? HttpStatusCode.NotFound : HttpStatusCode.BadRequest); await response.WriteAsJsonAsync(new { error = exception.Message }, cancellationToken); return response; }
     }
 

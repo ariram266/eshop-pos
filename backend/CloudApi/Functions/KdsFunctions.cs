@@ -14,7 +14,7 @@ public sealed class KdsFunctions(TenantContext tenantContext, AuthorizationServi
     {
         try
         {
-            var actor = tenantContext.Resolve(request);
+            var actor = await tenantContext.ResolveAsync(request, cancellationToken);
             await authorization.RequirePermissionAsync(actor, "kds.execute", cancellationToken);
             await using var connection = connections.Create();
             await connection.OpenAsync(cancellationToken);
@@ -35,7 +35,7 @@ public sealed class KdsFunctions(TenantContext tenantContext, AuthorizationServi
     {
         try
         {
-            var actor = tenantContext.Resolve(request);
+            var actor = await tenantContext.ResolveAsync(request, cancellationToken);
             await authorization.RequirePermissionAsync(actor, "kds.execute", cancellationToken);
             var input = await System.Text.Json.JsonSerializer.DeserializeAsync<UpdateKdsStatusRequest>(request.Body, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true }, cancellationToken) ?? throw new ArgumentException("Invalid KDS status body.");
             await using var connection = connections.Create();

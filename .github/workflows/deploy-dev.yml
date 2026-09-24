@@ -28,7 +28,7 @@ jobs:
           az deployment group create \
             --resource-group "${{ secrets.COUNTERPOINT_RESOURCE_GROUP }}" \
             --template-file infrastructure/main.bicep \
-            --parameters environment=dev sqlAdministratorPassword="$SQL_PASSWORD" entraClientId="$ENTRA_CLIENT_ID" entraOpenIdIssuer="$ENTRA_ISSUER" \
+            --parameters environment=dev location=eastus2 sqlLocation=centralus frontendOrigin="https://${{ vars.COUNTERPOINT_STATIC_WEB_APP_HOSTNAME }}" sqlAdministratorPassword="$SQL_PASSWORD" entraClientId="$ENTRA_CLIENT_ID" entraOpenIdIssuer="$ENTRA_ISSUER" \
             --query properties.outputs --output json > deployment-output.json
           echo "functions_name=$(jq -r '.functionsName.value' deployment-output.json)" >> "$GITHUB_OUTPUT"
           echo "static_web_app_name=$(jq -r '.staticWebAppName.value' deployment-output.json)" >> "$GITHUB_OUTPUT"

@@ -19,6 +19,8 @@ CREATE TABLE Batches (
 
 ALTER TABLE InventoryBalances ADD BatchId uniqueidentifier NULL;
 ALTER TABLE InventoryBalances ADD Reserved decimal(19,4) NOT NULL CONSTRAINT DF_InventoryBalances_Reserved DEFAULT 0;
+GO
+
 ALTER TABLE InventoryBalances ADD Available AS (OnHand - Reserved) PERSISTED;
 ALTER TABLE InventoryBalances ADD CONSTRAINT FK_InventoryBalances_Batches FOREIGN KEY (BatchId) REFERENCES Batches(Id);
 CREATE INDEX IX_InventoryBalances_Batch ON InventoryBalances (OrganizationId, LocationId, ProductId, BatchId);

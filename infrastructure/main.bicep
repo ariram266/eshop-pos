@@ -1,5 +1,7 @@
 param environment string = 'dev'
 param location string = resourceGroup().location
+param sqlLocation string = location
+param frontendOrigin string
 @secure()
 param sqlAdministratorPassword string
 param entraClientId string
@@ -8,6 +10,7 @@ param entraOpenIdIssuer string
 var suffix = toLower(uniqueString(resourceGroup().id, environment))
 var prefix = 'counterpoint-${environment}-${take(suffix, 8)}'
 var storageName = 'cp${take(suffix, 18)}'
+var vaultName = 'cp${take(suffix, 18)}kv'
 
 module storage './modules/storage.bicep' = {
   name: '${prefix}-storage'
@@ -16,7 +19,7 @@ module storage './modules/storage.bicep' = {
 
 module sql './modules/sql.bicep' = {
   name: '${prefix}-sql'
-  params: { name: '${prefix}-sql', location: location, administratorPassword: sqlAdministratorPassword }
+  params: { name: '${prefix}-sql', location: sqlLocation, administratorPassword: sqlAdministratorPassword }
 }
 
 module insights './modules/app-insights.bicep' = {
@@ -26,7 +29,7 @@ module insights './modules/app-insights.bicep' = {
 
 module vault './modules/key-vault.bicep' = {
   name: '${prefix}-vault'
-  params: { name: '${prefix}-vault', location: location }
+  params: { name: vaultName, location: location }
 }
 
 module pubsub './modules/web-pubsub.bicep' = {
@@ -35,7 +38,7 @@ module pubsub './modules/web-pubsub.bicep' = {
 }
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
-  name: vault.outputs.name
+  name: vaultName
 }
 
 resource sqlConnectionSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
@@ -52,12 +55,15 @@ module functions './modules/function-app.bicep' = {
     name: '${prefix}-functions'
     location: location
     storageAccountName: storage.outputs.name
+    storageAccountId: storage.outputs.id
+    storageBlobEndpoint: storage.outputs.blobEndpoint
     appInsightsConnectionString: insights.outputs.connectionString
     sqlServerName: sql.outputs.fullyQualifiedDomainName
     keyVaultName: vault.outputs.name
     webPubSubHostName: pubsub.outputs.hostName
     entraClientId: entraClientId
     entraOpenIdIssuer: entraOpenIdIssuer
+    frontendOrigin: frontendOrigin
   }
   dependsOn: [sqlConnectionSecret]
 }

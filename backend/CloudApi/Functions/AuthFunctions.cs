@@ -12,7 +12,7 @@ public sealed class AuthFunctions(TenantContext tenantContext)
     {
         try
         {
-            var actor = tenantContext.Resolve(request);
+            var actor = await tenantContext.ResolveAsync(request, CancellationToken.None);
             var response = request.CreateResponse(HttpStatusCode.OK);
             await response.WriteAsJsonAsync(actor);
             return response;

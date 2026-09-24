@@ -5,6 +5,8 @@ dist/
 *.db-wal
 bin/
 obj/
+backend/publish/
+backend/cloudapi.zip
 .vscode/
 .env.local
 .images

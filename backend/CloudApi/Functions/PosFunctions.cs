@@ -13,7 +13,7 @@ public sealed class PosFunctions(TenantContext tenantContext, AuthorizationServi
     {
         try
         {
-            var actor = tenantContext.Resolve(request);
+            var actor = await tenantContext.ResolveAsync(request, cancellationToken);
             await authorization.RequirePermissionAsync(actor, "catalog.read", cancellationToken);
             var response = request.CreateResponse(HttpStatusCode.OK);
             await response.WriteAsJsonAsync(await orders.GetBootstrapAsync(actor, cancellationToken), cancellationToken);

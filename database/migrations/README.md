@@ -2,6 +2,8 @@
 
 Migrations are ordered and must be applied once, in filename order, by the deployment pipeline against the target Azure SQL database.
 
+Migration `007_inventory-batches.sql` contains a `GO` batch separator because its computed `Available` column depends on the `Reserved` column added immediately before it. Keep that separator when running the script with `sqlcmd` or Azure SQL Query Editor.
+
 The first production milestone covers:
 
 1. Organizations, users, roles, locations, and registers

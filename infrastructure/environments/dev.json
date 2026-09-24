@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "value": "dev"
+    },
+    "location": {
+      "value": "eastus2"
+    },
+    "sqlLocation": {
+      "value": "centralus"
+    },
+    "sqlAdministratorPassword": {
+      "value": "HarmlessPlaceholder-123!"
+    },
+    "entraClientId": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "entraOpenIdIssuer": {
+      "value": "https://issuer.example.invalid/00000000-0000-0000-0000-000000000000"
+    }
+  }
+}

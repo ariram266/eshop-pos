@@ -1995,6 +1995,25 @@ Environment configuration:
 
 No environment-specific infrastructure should exist only through manual portal configuration.
 
+Deployment identity requirements:
+
+*   A human Entra user may perform the initial interactive setup with Azure CLI.
+*   GitHub Actions must use a separate service principal or federated workload identity, scoped to the target resource group with the least privilege required by the deployment.
+*   The backend API and frontend SPA app registrations are authentication configuration, not deployment identities.
+*   The Function App system-assigned managed identity must have `Key Vault Secrets User` access to its environment's vault before the application is expected to read the SQL connection secret.
+*   Flex Consumption Function Apps must define deployment storage in `functionAppConfig` and use a private Blob container; the Function App identity receives `Storage Blob Data Contributor` on the deployment storage account through Bicep.
+*   The identity running Bicep must have Azure `Owner` or `User Access Administrator` at the resource-group scope when the template creates managed-identity role assignments.
+
+Application authentication and authorization requirements:
+
+*   The frontend SPA must authenticate users with Microsoft Entra ID and request the backend API delegated scope `api://<backend-api-client-id>/user_impersonation`.
+*   The backend must validate the Entra issuer and API audience before application authorization.
+*   The backend API audience is `api://<backend-api-client-id>` and must match the delegated scope requested by the frontend.
+*   Application access must be determined by the Counterpoint database, including active user, organization membership, location assignment, role, and role permissions; Azure subscription roles do not grant POS access.
+*   The production identity flow maps the Entra `oid` claim (falling back to `sub`) to `Users.ExternalSubject` and resolves organization, location, and role from `UserLocations` and `UserRoles`; a standard Entra token does not provide these dynamic application values automatically.
+*   Environment locations must remain parameterized because service availability and subscription provisioning restrictions vary by region; the Development baseline uses `eastus2` after SQL provisioning was restricted in `eastus`.
+*   SQL location must be independently parameterized from the application resource-group location because Azure SQL provisioning restrictions may differ from other Azure services; the current Development candidate is `centralus`.
+
 * * *
 
 53. Phase-Wise Implementation Plan

@@ -15,7 +15,7 @@ public sealed class OrderFunctions(TenantContext tenantContext, AuthorizationSer
     {
         try
         {
-            var actor = tenantContext.Resolve(request);
+            var actor = await tenantContext.ResolveAsync(request, cancellationToken);
             await authorization.RequirePermissionAsync(actor, "orders.create", cancellationToken);
             var key = request.Headers.TryGetValues("Idempotency-Key", out var values) ? values.FirstOrDefault() : null;
             if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("Idempotency-Key is required.");
