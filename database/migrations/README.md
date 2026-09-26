@@ -15,5 +15,6 @@ The first production milestone covers:
 7. Inventory batches, lot traceability, reservations, and available stock
 8. Permissions, user-location assignments, devices, and audit events
 9. Suppliers, purchases, purchase lines, and receiving operations
+10. Business-location GST details used by browser receipts
 
 The application never creates or alters schema at startup. Production migrations require review and must be backward-compatible with the deployed Functions version.

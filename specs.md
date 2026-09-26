@@ -1435,11 +1435,15 @@ The bootstrap endpoint exists to avoid unnecessary API calls during normal POS u
 
 Supplier and received-purchase administration is organization-scoped. Vendors are editable through `PATCH /api/suppliers/{id}`. Editing a received purchase is transactional: the previous receipt quantity is reversed, the replacement lines are applied, and both inventory changes are recorded as stock movements. The operation is rejected when reversing the previous receipt would make on-hand inventory negative.
 
-Operational views provide catalog filters by name/SKU, category, and HSN. Purchase and sales history views provide name/reference search, daily/weekly/monthly/custom date filters, and grouping selectors for name, category, HSN, and invoice/reference. Vendors and Purchases are separate subviews under Operations. KDS remains a separate operational mode and is not duplicated inside the POS screen. POS ordering allows active tracked and non-tracked products; tracked products require inventory and create stock movements, while non-tracked prepared/service/non-stock products create order lines without inventory mutation.
+Operational views provide catalog filters by name/SKU, category, and HSN. Purchase and sales history views provide name/reference search, daily/weekly/monthly/custom date filters, and grouping selectors for name, category, HSN, and invoice/reference. Purchase filters and grouping controls are contained within the purchase list panel. Receiving searches inventory-tracked products through a searchable product field while submitting the selected product ID. Vendors and Purchases are separate subviews under Operations. KDS remains a separate operational mode and is not duplicated inside the POS screen. POS ordering allows active tracked and non-tracked products; tracked products require inventory and create stock movements, while non-tracked prepared/service/non-stock products create order lines without inventory mutation.
+
+Sales history displays one row per sold item with invoice, HSN, category, item, sale date/time, quantity, gross amount, GST rate and amount, CGST rate and amount, SGST rate and amount, and net amount. For each displayed line, gross is `unit price * quantity`; CGST amount is `gross * CGST rate / 100`; SGST amount is `gross * SGST rate / 100`; GST amount is CGST plus SGST; and net amount is gross minus GST.
+
+POS prices are gross amounts. For every order line, GST is calculated as `gross * GST rate / 100`, net line amount is `gross - GST`, order subtotal is the sum of net line amounts, order tax is the sum of GST amounts, and order total is gross (`subtotal + tax`). The server is authoritative for these persisted order totals and payment amounts.
 
 Catalog administration is split into Categories and Products subviews. Each admin subview places its create/edit form beside the corresponding list on wide screens and stacks them responsively on narrow screens. Active non-tracked products remain visible and orderable in POS for prepared, service, and non-stock sales, but never create inventory balances, stock movements, or reorder calculations.
 
-Initial deployment role menu policy: `OrganizationOwner`, `OperationsManager`, and `StoreManager` receive the full POS, KDS, Catalog, and Operations menus. `Cashier` receives POS and purchase receiving only. Cashier purchase receiving uses `inventory.purchase.receive`; purchase editing remains restricted to the stronger inventory adjustment permission.
+Initial deployment role menu policy: `OrganizationOwner`, `OperationsManager`, and `StoreManager` receive the full POS, KDS, Catalog, and Operations menus. `Cashier` receives POS and purchase receiving only. Purchase receiving uses `inventory.purchase.receive` for `OrganizationOwner`, `OperationsManager`, `StoreManager`, and `Cashier`; purchase editing remains restricted to the stronger inventory adjustment permission.
     
 
 * * *
@@ -1631,6 +1635,8 @@ Initial implementation:
 
 No local printing agent is required for the initial release.
 Future direct thermal printing can be added as an isolated hardware integration.
+
+The browser receipt uses an 80mm thermal-invoice layout with the organization name, business location name, location GST number, Retail Invoice title, walk-in customer, invoice number, date/time, item/rate/quantity/tax/amount columns, subtotal (net), CGST, SGST, total (gross), item count, and quantity count. The organization name is read from `Organizations.Name`; the office name and GST number are read from the active `Locations` row selected by the actor. The receipt opens in a print window and uses the order's server-authoritative subtotal, tax, and total values. Item Amount is gross, item Tax displays the GST amount only, subtotal is net, and total is gross. The receipt totals show only Sub Total, CGST, SGST, and TOTAL; there is no separate receipt-level GST row.
 
 * * *
 

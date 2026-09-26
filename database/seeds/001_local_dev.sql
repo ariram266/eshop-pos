@@ -10,6 +10,7 @@ DECLARE @register uniqueidentifier = '00000000-0000-0000-0000-000000000014';
 IF NOT EXISTS (SELECT 1 FROM Organizations WHERE Id=@org) INSERT Organizations (Id,Name,Currency,TimeZone) VALUES (@org,'Counterpoint Local','USD','UTC');
 IF NOT EXISTS (SELECT 1 FROM Users WHERE Id=@user) INSERT Users (Id,ExternalSubject,DisplayName) VALUES (@user,'local-development-user','Local Development User');
 IF NOT EXISTS (SELECT 1 FROM Locations WHERE Id=@location) INSERT Locations (Id,OrganizationId,Name,LocationType) VALUES (@location,@org,'Local Cafe','CAFE');
+IF COL_LENGTH('Locations', 'GstNumber') IS NOT NULL UPDATE Locations SET Name='Head Office' WHERE Id=@location;
 IF NOT EXISTS (SELECT 1 FROM Registers WHERE Id=@register) INSERT Registers (Id,OrganizationId,LocationId,RegisterCode,Name) VALUES (@register,@org,@location,'register-01','Local Register');
 IF NOT EXISTS (SELECT 1 FROM Categories WHERE Id=@category) INSERT Categories (Id,OrganizationId,Name) VALUES (@category,@org,'Cafe Menu');
 IF NOT EXISTS (SELECT 1 FROM TaxRules WHERE Id=@tax) INSERT TaxRules (Id,OrganizationId,Name,Rate) VALUES (@tax,@org,'Local tax',8.25);

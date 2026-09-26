@@ -15,6 +15,7 @@ Azure SQL migrations are ordered scripts under `database/migrations`.
 - `011_product-inventory-tracking.sql`: explicit product inventory tracking and type-based backfill
 - `012_category-hierarchy.sql`: optional parent categories for department/subcategory organization
 - `013_cashier-purchase-permission.sql`: dedicated Cashier purchase-receiving permission
+- `014_operations-purchase-permission.sql`: purchase-receiving permission for OrganizationOwner, OperationsManager, and StoreManager
 
 Migrations must be applied in filename order. The application does not mutate schema at startup.
 
@@ -40,7 +41,7 @@ for file in database/migrations/*.sql; do
 done
 ```
 
-The `*.sql` expansion applies the files in numeric filename order (`001` through `013`). Do not run `database/seeds/001_local_dev.sql` against Azure; it creates local-development IDs and data. After migrations, provision the deployed Entra user in `Users`, `UserLocations`, and `UserRoles`.
+The `*.sql` expansion applies the files in numeric filename order (`001` through `014`). Do not run `database/seeds/001_local_dev.sql` against Azure; it creates local-development IDs and data. After migrations, provision the deployed Entra user in `Users`, `UserLocations`, and `UserRoles`.
 
 ## Provision Entra users and application roles
 

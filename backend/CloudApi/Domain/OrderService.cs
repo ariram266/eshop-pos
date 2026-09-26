@@ -23,6 +23,16 @@ public sealed class OrderService(SqlConnectionFactory connections, KdsService kd
         var modifiers = new List<ModifierDto>();
         var taxes = new List<TaxRuleDto>();
         var stations = new List<PreparationStationDto>();
+        BusinessLocationDto businessLocation;
+
+        await using (var command = new SqlCommand("SELECT o.Name,l.Name,l.GstNumber FROM Organizations o JOIN Locations l ON l.OrganizationId=o.Id WHERE o.Id=@org AND l.Id=@location AND l.Active=1;", connection))
+        {
+            command.Parameters.AddWithValue("org", actor.OrganizationId);
+            command.Parameters.AddWithValue("location", actor.LocationId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) throw new InvalidOperationException("Business location is unavailable.");
+            businessLocation = new(reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2));
+        }
 
         await using (var command = new SqlCommand("SELECT Id, Name, ParentId, Active FROM Categories WHERE OrganizationId=@org AND Active=1 ORDER BY Name;", connection))
         {
@@ -30,7 +40,7 @@ public sealed class OrderService(SqlConnectionFactory connections, KdsService kd
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken)) categories.Add(new(reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetBoolean(3)));
         }
-        await using (var command = new SqlCommand("SELECT p.Id,p.Sku,p.Name,p.CategoryId,pp.Price,p.Unit,CASE WHEN p.TrackInventory=1 THEN COALESCE(ib.OnHand,0) ELSE 0 END,p.ProductType,p.PreparationStationId,COALESCE(tr.Rate,0),p.Active,p.HsnCode,p.GstRate,p.CgstRate,p.SgstRate,p.TrackInventory FROM Products p JOIN ProductPrices pp ON pp.ProductId=p.Id AND pp.LocationId=@location AND pp.Active=1 JOIN Categories c ON c.Id=p.CategoryId AND c.Active=1 LEFT JOIN InventoryBalances ib ON ib.ProductId=p.Id AND ib.LocationId=@location LEFT JOIN TaxRules tr ON tr.Id=p.TaxRuleId WHERE p.OrganizationId=@org AND p.Active=1 ORDER BY p.Name;", connection))
+        await using (var command = new SqlCommand("SELECT p.Id,p.Sku,p.Name,p.CategoryId,pp.Price,p.Unit,CASE WHEN p.TrackInventory=1 THEN COALESCE(ib.OnHand,0) ELSE 0 END,p.ProductType,p.PreparationStationId,COALESCE(tr.Rate,0),p.Active,p.HsnCode,COALESCE(NULLIF(p.GstRate,0),COALESCE(tr.Rate,0)),CASE WHEN p.GstRate > 0 THEN p.CgstRate ELSE COALESCE(tr.Rate,0)/2 END,CASE WHEN p.GstRate > 0 THEN p.SgstRate ELSE COALESCE(tr.Rate,0)/2 END,p.TrackInventory FROM Products p JOIN ProductPrices pp ON pp.ProductId=p.Id AND pp.LocationId=@location AND pp.Active=1 JOIN Categories c ON c.Id=p.CategoryId AND c.Active=1 LEFT JOIN InventoryBalances ib ON ib.ProductId=p.Id AND ib.LocationId=@location LEFT JOIN TaxRules tr ON tr.Id=p.TaxRuleId WHERE p.OrganizationId=@org AND p.Active=1 ORDER BY p.Name;", connection))
         {
             command.Parameters.AddWithValue("org", actor.OrganizationId);
             command.Parameters.AddWithValue("location", actor.LocationId);
@@ -61,7 +71,7 @@ public sealed class OrderService(SqlConnectionFactory connections, KdsService kd
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken)) modifiers.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetDecimal(3)));
         }
-        return new(categories, products, modifierGroups, modifiers, taxes, stations, actor.LocationId, "USD");
+        return new(categories, products, modifierGroups, modifiers, taxes, stations, actor.LocationId, "USD", businessLocation);
     }
 
     public async Task<OrderDto> CreateAsync(ActorContext actor, CreateOrderRequest input, string idempotencyKey, CancellationToken cancellationToken)
@@ -87,16 +97,16 @@ public sealed class OrderService(SqlConnectionFactory connections, KdsService kd
         decimal subtotal = 0;
         foreach (var requested in input.Lines)
         {
-            await using var product = new SqlCommand("SELECT p.Name,pp.Price,COALESCE(ib.OnHand,0),COALESCE(tr.Rate,0),ps.Code,p.TrackInventory FROM Products p JOIN ProductPrices pp ON pp.ProductId=p.Id AND pp.LocationId=@location AND pp.Active=1 LEFT JOIN InventoryBalances ib ON ib.ProductId=p.Id AND ib.LocationId=@location LEFT JOIN TaxRules tr ON tr.Id=p.TaxRuleId LEFT JOIN PreparationStations ps ON ps.Id=p.PreparationStationId WHERE p.Id=@product AND p.OrganizationId=@org AND p.Active=1;", connection, transaction);
+            await using var product = new SqlCommand("SELECT p.Name,pp.Price,COALESCE(ib.OnHand,0),COALESCE(NULLIF(p.GstRate,0),COALESCE(tr.Rate,0)),CASE WHEN p.GstRate > 0 THEN p.CgstRate ELSE COALESCE(tr.Rate,0)/2 END,CASE WHEN p.GstRate > 0 THEN p.SgstRate ELSE COALESCE(tr.Rate,0)/2 END,ps.Code,p.TrackInventory FROM Products p JOIN ProductPrices pp ON pp.ProductId=p.Id AND pp.LocationId=@location AND pp.Active=1 LEFT JOIN InventoryBalances ib ON ib.ProductId=p.Id AND ib.LocationId=@location LEFT JOIN TaxRules tr ON tr.Id=p.TaxRuleId LEFT JOIN PreparationStations ps ON ps.Id=p.PreparationStationId WHERE p.Id=@product AND p.OrganizationId=@org AND p.Active=1;", connection, transaction);
             product.Parameters.AddWithValue("location", actor.LocationId); product.Parameters.AddWithValue("product", requested.ProductId); product.Parameters.AddWithValue("org", actor.OrganizationId);
             await using var reader = await product.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken)) throw new InvalidOperationException("Product is unavailable.");
-            var name = reader.GetString(0); var price = reader.GetDecimal(1); var stock = reader.GetDecimal(2); var rate = reader.GetDecimal(3); var station = reader.IsDBNull(4) ? null : reader.GetString(4); var trackInventory = reader.GetBoolean(5);
+            var name = reader.GetString(0); var price = reader.GetDecimal(1); var stock = reader.GetDecimal(2); var gstRate = reader.GetDecimal(3); var cgstRate = reader.GetDecimal(4); var sgstRate = reader.GetDecimal(5); var station = reader.IsDBNull(6) ? null : reader.GetString(6); var trackInventory = reader.GetBoolean(7);
             await reader.CloseAsync();
             if (requested.Quantity <= 0) throw new InvalidOperationException($"Quantity must be positive for {name}.");
             if (trackInventory) { inventoryTrackedProducts.Add(requested.ProductId); if (stock < requested.Quantity) throw new InvalidOperationException($"Insufficient inventory for {name}."); }
-            var lineSubtotal = price * requested.Quantity; var lineTax = Math.Round(lineSubtotal * rate / 100m, 2); subtotal += lineSubtotal;
-            lines.Add(new(requested.ProductId, name, requested.Quantity, price, lineTax, station));
+            var lineGross = price * requested.Quantity; var lineTax = Math.Round(lineGross * gstRate / 100m, 2); subtotal += lineGross - lineTax;
+            lines.Add(new(requested.ProductId, name, requested.Quantity, price, lineTax, station, gstRate, cgstRate, sgstRate));
         }
         var tax = lines.Sum(line => line.TaxAmount); var total = subtotal + tax; var orderId = Guid.NewGuid(); var number = $"{DateTimeOffset.UtcNow:yyMMdd}-{Random.Shared.Next(1000, 10000)}";
         await using (var command = new SqlCommand("INSERT INTO Orders (Id,OrganizationId,LocationId,RegisterId,OrderNumber,Channel,OrderType,Status,Subtotal,Tax,Total,CreatedBy) VALUES (@id,@org,@location,@register,@number,'POS',@type,'PAID',@subtotal,@tax,@total,@user);", connection, transaction))

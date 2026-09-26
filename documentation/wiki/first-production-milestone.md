@@ -19,6 +19,7 @@ Included in this milestone:
 - SQL recovery endpoint for missed KDS notifications
 - Post-commit Web PubSub notification hook
 - Browser receipt printing
+- 80mm thermal-style Retail Invoice output with invoice metadata, gross item amounts, GST tax, net subtotal, CGST, SGST, GST total, gross total, and item/quantity counts
 - Correlation-aware health endpoint
 - .NET, frontend, migration, Bicep, and dependency CI gates
 

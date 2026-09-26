@@ -51,6 +51,14 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px 
 .catalog-filters select { flex: 0 0 auto; }
 .filter-bar { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; align-items: center; }
 .filter-bar input, .filter-bar select { flex: 1 1 150px; min-width: 130px; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 10px 0 18px; }
+.summary-grid strong { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: #f8f8f5; color: var(--ink); font: 700 24px/1.1 'Space Grotesk'; letter-spacing: -.6px; }
+.summary-grid small { color: var(--muted); font: 600 10px 'DM Mono'; letter-spacing: .08em; text-transform: uppercase; }
+.summary-grid-secondary { margin-top: 0; }
+.sales-full-width { display: grid; gap: 18px; width: 100%; }
+.sales-panel-full { width: 100%; }
+.sales-filters-row { width: 100%; }
+.sales-filters-row .filter-bar { margin: 0; }
 .report-tabs { display: flex; gap: 8px; margin-top: 10px; }
 .report-tabs button { border: 1px solid #b8d8d5; border-radius: 4px; background: #fff; color: var(--primary-dark); padding: 6px 12px; font-size: 11px; font-weight: 700; cursor: pointer; }
 .report-tabs button.active { background: var(--primary-dark); color: #fff; }

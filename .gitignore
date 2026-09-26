@@ -10,3 +10,4 @@ backend/cloudapi.zip
 .vscode/
 .env.local
 .images
+publish/*

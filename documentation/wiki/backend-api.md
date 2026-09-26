@@ -41,11 +41,19 @@ Provision each production user in SQL after applying the migrations: store the E
 
 Product bootstrap responses include HSN, GST, computed CGST, computed SGST, and `trackInventory`. Purchase receiving is limited to inventory-tracked products; prepared products, menu items, services, and non-stock items are not received as stock, but remain sellable through POS without inventory mutation.
 
+POS product prices are gross amounts. During order creation, the server calculates line GST as `gross * GST rate / 100`, stores the net line sum as `Orders.Subtotal`, stores the GST sum as `Orders.Tax`, and stores gross as `Orders.Total` (`subtotal + tax`). Payment capture uses the gross order total.
+
+When a product's explicit GST rate is zero for legacy data, order creation falls back to the linked tax-rule rate and derives equal CGST and SGST rates. Receipt item Tax displays the GST amount only; the rate is not repeated in that column. Receipt totals show Sub Total, CGST, SGST, and TOTAL without a separate GST row.
+
+`GET /api/pos/bootstrap` also returns `businessLocation` with the organization name, active location name, and optional location GST number. Browser receipts use these values for the business header; they are read from `Organizations.Name` and the actor's active `Locations` row.
+
 Vendor and purchase edits remain organization- and location-scoped. Editing a received purchase reverses its previous inventory receipt and applies the replacement lines in one serializable transaction; the API rejects edits that would make on-hand inventory negative.
 
 Categories support active top-level departments and optional subcategories. Deactivation is a soft operation: it hides the category from active bootstrap/catalog selection while preserving existing products and history.
 
-The current frontend provides catalog filters by name/SKU, category, and HSN, plus purchase and sales filters for search, daily/weekly/monthly/custom dates, and grouping. Vendors and Purchases are separate Operations subviews. KDS is a separate mode and is not rendered inside the POS view. Non-tracked prepared, service, and non-stock products remain orderable, while tracked products are checked against stock.
+The current frontend provides catalog filters by name/SKU, category, and HSN, plus purchase and sales filters for search, daily/weekly/monthly/custom dates, and grouping. Purchase filters and grouping controls are contained within the purchase list panel, and receiving uses a searchable inventory-product field. Vendors and Purchases are separate Operations subviews. KDS is a separate mode and is not rendered inside the POS view. Non-tracked prepared, service, and non-stock products remain orderable, while tracked products are checked against stock.
+
+Sales history is rendered one row per sold item and includes invoice, HSN, category, item, sale date/time, quantity, gross amount, GST rate and amount, CGST rate and amount, SGST rate and amount, and net amount. The frontend calculates these display values from gross (`unit price * quantity`): CGST is `gross * CGST rate / 100`, SGST is `gross * SGST rate / 100`, GST is CGST plus SGST, and net is gross minus GST.
 
 Catalog administration is presented as separate Categories and Products subviews. Non-tracked active products are displayed as orderable prepared/service/non-stock items; only tracked products are subject to stock availability checks and inventory deduction.
 
