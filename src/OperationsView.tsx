@@ -28,10 +28,14 @@ type SupplierForm = {
 };
 type PurchaseForm = {
   supplierId: string;
+  lines: PurchaseFormLine[];
+  reference: string;
+};
+type PurchaseFormLine = {
   productId: string;
+  productSearch: string;
   quantity: string;
   unitCost: string;
-  reference: string;
 };
 type Period = "" | "today" | "week" | "month" | "custom";
 
@@ -41,13 +45,19 @@ const emptySupplierForm = (): SupplierForm => ({
   email: "",
   phone: "",
 });
-const emptyPurchaseForm = (): PurchaseForm => ({
-  supplierId: "",
+const emptyPurchaseLine = (): PurchaseFormLine => ({
   productId: "",
+  productSearch: "",
   quantity: "",
   unitCost: "",
+});
+const emptyPurchaseForm = (): PurchaseForm => ({
+  supplierId: "",
+  lines: [emptyPurchaseLine()],
   reference: "",
 });
+export const productOptionValue = (product: Pick<Product, "sku" | "name" | "productType">) =>
+  `${product.sku} • ${product.name} • ${product.productType}`;
 const startOfPeriod = (period: Period) => {
   const date = new Date();
   if (period === "today") date.setHours(0, 0, 0, 0);
@@ -132,12 +142,14 @@ export function OperationsView({
   locationId,
   role,
   onNotice,
+  onInventoryChanged,
   initialTab = "inventory",
 }: {
   bootstrap: PosBootstrap;
   locationId: string;
   role: string;
   onNotice: (message: string) => void;
+  onInventoryChanged: () => Promise<void>;
   initialTab?: "inventory" | "vendors" | "purchases" | "sales";
 }) {
   const [tab, setTab] = useState<
@@ -156,7 +168,8 @@ export function OperationsView({
   );
   const [purchaseForm, setPurchaseForm] =
     useState<PurchaseForm>(emptyPurchaseForm());
-  const [productSearch, setProductSearch] = useState("");
+  const [productPickerLine, setProductPickerLine] = useState<number | null>(null);
+  const [productPickerSearch, setProductPickerSearch] = useState("");
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(
     null,
   );
@@ -169,6 +182,9 @@ export function OperationsView({
   >("none");
   const receivableProducts = bootstrap.products.filter(
     (product) => product.trackInventory,
+  );
+  const pickerProducts = receivableProducts.filter((product) =>
+    matchesProductSearch(product, productPickerSearch),
   );
   const admin = role !== "Cashier" && role !== "CounterStaff";
   const canEditPurchase = role !== "Cashier" && role !== "CounterStaff";
@@ -223,8 +239,8 @@ export function OperationsView({
   const savePurchase = async (event: React.FormEvent) => {
     event.preventDefault();
     try {
-      if (!purchaseForm.productId) {
-        onNotice("Choose an inventory product from the search results.");
+      if (purchaseForm.lines.some((line) => !line.productId)) {
+        onNotice("Choose an inventory product for each purchase line from the search results.");
         return;
       }
       if (!canEditPurchase && editingPurchaseId) {
@@ -237,13 +253,11 @@ export function OperationsView({
         supplierId: purchaseForm.supplierId,
         locationId,
         reference: purchaseForm.reference || `PO-${Date.now()}`,
-        lines: [
-          {
-            productId: purchaseForm.productId,
-            quantity: Number(purchaseForm.quantity),
-            unitCost: Number(purchaseForm.unitCost),
-          },
-        ],
+        lines: purchaseForm.lines.map((line) => ({
+          productId: line.productId,
+          quantity: Number(line.quantity),
+          unitCost: Number(line.unitCost),
+        })),
       };
       if (editingPurchaseId) {
         await updatePurchase(editingPurchaseId, input);
@@ -253,8 +267,8 @@ export function OperationsView({
         onNotice("Purchase received and inventory updated");
       }
       setPurchaseForm(emptyPurchaseForm());
-      setProductSearch("");
       setEditingPurchaseId(null);
+      await onInventoryChanged();
       await refresh();
     } catch (caught) {
       onNotice(
@@ -280,18 +294,19 @@ export function OperationsView({
       );
       return;
     }
-    const line = purchase.lines[0];
-    if (!line) return;
-    const product = receivableProducts.find(
-      (item) => item.id === line.productId,
-    );
+    if (!purchase.lines.length) return;
     setEditingPurchaseId(purchase.id);
-    setProductSearch(product ? `${product.name} (${product.productType})` : "");
     setPurchaseForm({
       supplierId: purchase.supplierId,
-      productId: line.productId,
-      quantity: String(line.quantity),
-      unitCost: String(line.unitCost),
+      lines: purchase.lines.map((line) => {
+        const product = receivableProducts.find((item) => item.id === line.productId);
+        return {
+          productId: line.productId,
+          productSearch: product ? productOptionValue(product) : "",
+          quantity: String(line.quantity),
+          unitCost: String(line.unitCost),
+        };
+      }),
       reference: purchase.reference,
     });
   };
@@ -551,7 +566,7 @@ export function OperationsView({
         </div>
       )}
       {tab === "purchases" && (
-        <div className="admin-grid">
+        <div className="admin-grid purchase-workspace">
           <form className="form-panel" onSubmit={savePurchase}>
             <h2>{editingPurchaseId ? "Edit purchase" : "Receive purchase"}</h2>
             <label>
@@ -575,78 +590,148 @@ export function OperationsView({
               </select>
             </label>
             <label>
-              Inventory product
-              <input
-                required
-                list="receivable-products"
-                placeholder="Search by SKU or item name"
-                value={productSearch}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  const product = receivableProducts.find((item) =>
-                    matchesProductSearch(item, value),
-                  );
-                  setProductSearch(value);
-                  setPurchaseForm({
-                    ...purchaseForm,
-                    productId: product?.id || "",
-                  });
-                }}
-              />
-              <datalist id="receivable-products">
-                {receivableProducts.map((item) => (
-                  <option
-                    key={item.id}
-                    value={`${item.sku} • ${item.name} • ${item.productType}`}
-                  />
-                ))}
-              </datalist>
-            </label>
-            <label>
-              Quantity
-              <input
-                required
-                type="number"
-                min="0.0001"
-                step="0.0001"
-                value={purchaseForm.quantity}
-                onChange={(event) =>
-                  setPurchaseForm({
-                    ...purchaseForm,
-                    quantity: event.target.value,
-                  })
-                }
-              />
-            </label>
-            <label>
-              Unit cost
-              <input
-                required
-                type="number"
-                min="0"
-                step="0.01"
-                value={purchaseForm.unitCost}
-                onChange={(event) =>
-                  setPurchaseForm({
-                    ...purchaseForm,
-                    unitCost: event.target.value,
-                  })
-                }
-              />
-            </label>
-            <label>
               Invoice / reference
               <input
                 required
                 value={purchaseForm.reference}
                 onChange={(event) =>
-                  setPurchaseForm({
-                    ...purchaseForm,
-                    reference: event.target.value,
-                  })
+                  setPurchaseForm({ ...purchaseForm, reference: event.target.value })
                 }
               />
             </label>
+            <div className="purchase-table-wrap">
+              <table className="purchase-entry-table">
+                <thead>
+                  <tr><th>Product</th><th>Qty</th><th>Unit price</th><th aria-label="Actions" /></tr>
+                </thead>
+                <tbody>
+            {purchaseForm.lines.map((line, index) => (
+              <tr key={index}>
+                <td className="purchase-product-cell">
+                  <input
+                    required
+                    readOnly
+                    placeholder="Search product or SKU"
+                    value={line.productSearch}
+                    onClick={() => {
+                      setProductPickerLine(index);
+                      setProductPickerSearch(line.productSearch);
+                    }}
+                  />
+                </td>
+                <td>
+                  <input
+                    required
+                    type="number"
+                    min="0.0001"
+                    step="0.0001"
+                    value={line.quantity}
+                    onChange={(event) =>
+                      setPurchaseForm({
+                        ...purchaseForm,
+                        lines: purchaseForm.lines.map((currentLine, lineIndex) =>
+                          lineIndex === index ? { ...currentLine, quantity: event.target.value } : currentLine,
+                        ),
+                      })
+                    }
+                  />
+                </td>
+                <td>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={line.unitCost}
+                    onChange={(event) =>
+                      setPurchaseForm({
+                        ...purchaseForm,
+                        lines: purchaseForm.lines.map((currentLine, lineIndex) =>
+                          lineIndex === index ? { ...currentLine, unitCost: event.target.value } : currentLine,
+                        ),
+                      })
+                    }
+                  />
+                </td>
+                <td>
+                {purchaseForm.lines.length > 1 && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    aria-label="Remove product"
+                    title="Remove product"
+                    onClick={() => {
+                      setPurchaseForm({
+                        ...purchaseForm,
+                        lines: purchaseForm.lines.filter((_, lineIndex) => lineIndex !== index),
+                      });
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+                </td>
+              </tr>
+            ))}
+                </tbody>
+              </table>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setPurchaseForm({
+                  ...purchaseForm,
+                  lines: [...purchaseForm.lines, emptyPurchaseLine()],
+                });
+              }}
+            >
+              Add product
+            </button>
+            {productPickerLine !== null && (
+              <div className="purchase-picker-backdrop" role="presentation" onMouseDown={() => setProductPickerLine(null)}>
+                <div className="purchase-picker" role="dialog" aria-modal="true" aria-labelledby="purchase-picker-title" onMouseDown={(event) => event.stopPropagation()}>
+                  <div className="purchase-picker-header">
+                    <div>
+                      <h3 id="purchase-picker-title">Choose inventory product</h3>
+                      <p>Select a product for line {productPickerLine + 1}.</p>
+                    </div>
+                    <button type="button" className="secondary-button" onClick={() => setProductPickerLine(null)}>Close</button>
+                  </div>
+                  <input
+                    autoFocus
+                    placeholder="Search by SKU, name or type"
+                    value={productPickerSearch}
+                    onChange={(event) => setProductPickerSearch(event.target.value)}
+                  />
+                  <div className="purchase-picker-grid">
+                    {pickerProducts.map((product) => (
+                      <button
+                        type="button"
+                        className="purchase-picker-product"
+                        key={product.id}
+                        onClick={() => {
+                          setPurchaseForm({
+                            ...purchaseForm,
+                            lines: purchaseForm.lines.map((line, lineIndex) =>
+                              lineIndex === productPickerLine
+                                ? { ...line, productId: product.id, productSearch: productOptionValue(product) }
+                                : line,
+                            ),
+                          });
+                          setProductPickerLine(null);
+                          setProductPickerSearch("");
+                        }}
+                      >
+                        <strong>{product.name}</strong>
+                        <span>{product.sku}</span>
+                        <small>{product.productType}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             <button
               className="primary-button"
               disabled={Boolean(editingPurchaseId && !canEditPurchase)}

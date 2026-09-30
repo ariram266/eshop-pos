@@ -506,6 +506,7 @@ export default function App() {
             bootstrap={bootstrap}
             locationId={actor.locationId}
             role={actor.role}
+            onInventoryChanged={async () => setBootstrap(await fetchPosBootstrap())}
             initialTab={
               actor.role === "Cashier" || actor.role === "CounterStaff"
                 ? "purchases"

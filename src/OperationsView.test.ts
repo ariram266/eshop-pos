@@ -2,11 +2,17 @@ import { describe, expect, it } from 'vitest'
 import {
   calculateSalesLineAmounts,
   matchesProductSearch,
+  productOptionValue,
   summarizePurchaseTotals,
   summarizeSalesTotals,
 } from './OperationsView'
 
 describe('OperationsView helpers', () => {
+  it('creates a searchable product label with SKU', () => {
+    expect(productOptionValue({ sku: 'COFFEE-01', name: 'Coffee', productType: 'MENU_ITEM' }))
+      .toBe('COFFEE-01 • Coffee • MENU_ITEM')
+  })
+
   it('matches inventory products by sku or product name', () => {
     expect(
       matchesProductSearch(
@@ -19,6 +25,13 @@ describe('OperationsView helpers', () => {
       matchesProductSearch(
         { sku: 'COFFEE-01', name: 'Coffee', productType: 'MENU_ITEM' },
         '01',
+      ),
+    ).toBe(true)
+
+    expect(
+      matchesProductSearch(
+        { sku: 'COFFEE-01', name: 'Coffee', productType: 'MENU_ITEM' },
+        'COFFEE-01',
       ),
     ).toBe(true)
 
