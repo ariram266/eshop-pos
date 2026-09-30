@@ -16,6 +16,7 @@ Azure SQL migrations are ordered scripts under `database/migrations`.
 - `012_category-hierarchy.sql`: optional parent categories for department/subcategory organization
 - `013_cashier-purchase-permission.sql`: dedicated Cashier purchase-receiving permission
 - `014_operations-purchase-permission.sql`: purchase-receiving permission for OrganizationOwner, OperationsManager, and StoreManager
+- `015_operations-purchase-edit-permission.sql`: purchase-edit permission for OrganizationOwner, OperationsManager, and StoreManager
 
 Migrations must be applied in filename order. The application does not mutate schema at startup.
 

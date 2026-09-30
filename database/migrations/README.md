@@ -16,5 +16,6 @@ The first production milestone covers:
 8. Permissions, user-location assignments, devices, and audit events
 9. Suppliers, purchases, purchase lines, and receiving operations
 10. Business-location GST details used by browser receipts
+11. Purchase-edit permission for OrganizationOwner, OperationsManager, and StoreManager
 
 The application never creates or alters schema at startup. Production migrations require review and must be backward-compatible with the deployed Functions version.
