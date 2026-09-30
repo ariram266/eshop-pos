@@ -33,6 +33,15 @@ import "./styles.css";
 type CartLine = { product: Product; quantity: number };
 const money = (value: number) => value.toFixed(2);
 const registerCode = import.meta.env.VITE_REGISTER_CODE || "register-01";
+const kdsRoles = new Set([
+  "PlatformAdmin",
+  "OrganizationOwner",
+  "OperationsManager",
+  "StoreManager",
+  "KitchenStaff",
+  "CounterStaff",
+  "JuiceStaff",
+]);
 
 export default function App() {
   const [actor, setActor] = useState<Actor | null>(null);
@@ -81,7 +90,7 @@ export default function App() {
       ]);
       setActor(currentActor);
       setBootstrap(catalog);
-      setKdsItems(await fetchActiveKds());
+      if (kdsRoles.has(currentActor.role)) setKdsItems(await fetchActiveKds());
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Cloud API unavailable",
@@ -100,6 +109,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!actor) return;
+    if (!kdsRoles.has(actor.role)) return;
     const timer = window.setInterval(() => {
       void fetchActiveKds()
         .then(setKdsItems)
@@ -186,7 +196,7 @@ export default function App() {
       setCart([]);
       setNotice(`Order ${order.orderNumber} paid`);
       setBootstrap(await fetchPosBootstrap());
-      setKdsItems(await fetchActiveKds());
+      if (actor && kdsRoles.has(actor.role)) setKdsItems(await fetchActiveKds());
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : "Order failed");
     }
@@ -439,7 +449,7 @@ export default function App() {
           >
             POS
           </button>
-          {actor.role !== "Cashier" && actor.role !== "CounterStaff" && (
+          {kdsRoles.has(actor.role) && (
             <button
               className={mode === "kds" ? "active" : ""}
               onClick={() => setMode("kds")}
@@ -479,7 +489,7 @@ export default function App() {
             items={kdsItems}
             onStatus={async (id, status) => {
               await updateKdsStatus(id, status);
-              setKdsItems(await fetchActiveKds());
+              if (actor && kdsRoles.has(actor.role)) setKdsItems(await fetchActiveKds());
             }}
           />
         ) : mode === "catalog" ? (
