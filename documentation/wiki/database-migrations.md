@@ -19,6 +19,7 @@ Azure SQL migrations are ordered scripts under `database/migrations`.
 - `015_operations-purchase-edit-permission.sql`: purchase-edit permission for OrganizationOwner, OperationsManager, and StoreManager
 - `016_kds-feature-toggle.sql`: location-scoped KDS enablement and manager permission
 - `017_purchase-line-inventory-effect.sql`: preserve inventory behavior per purchase line, including expense-only service lines
+- `018_order-number-sequences.sql`: store the last invoice sequence per organization and business date
 
 Migrations must be applied in filename order. The application does not mutate schema at startup.
 

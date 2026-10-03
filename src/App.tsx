@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createCategory,
   createOrder,
@@ -51,6 +51,9 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [inventoryOnly, setInventoryOnly] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [isPaying, setIsPaying] = useState(false);
+  const paymentInProgress = useRef(false);
+  const orderIdempotencyKey = useRef<string | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -150,7 +153,9 @@ export default function App() {
   const subtotal = gross - tax;
   const total = gross;
 
-  const addToCart = (product: Product) =>
+  const addToCart = (product: Product) => {
+    if (paymentInProgress.current) return;
+    orderIdempotencyKey.current = null;
     setCart((current) => {
       const existing = current.find((line) => line.product.id === product.id);
       if (
@@ -168,7 +173,10 @@ export default function App() {
           )
         : [...current, { product, quantity: 1 }];
     });
-  const changeQuantity = (productId: string, delta: number) =>
+  };
+  const changeQuantity = (productId: string, delta: number) => {
+    if (paymentInProgress.current) return;
+    orderIdempotencyKey.current = null;
     setCart((current) =>
       current
         .map((line) =>
@@ -184,9 +192,14 @@ export default function App() {
         )
         .filter((line) => line.quantity > 0),
     );
+  };
   const completeSale = async () => {
-    if (!cart.length) return;
+    if (!cart.length || paymentInProgress.current) return;
+    paymentInProgress.current = true;
+    setIsPaying(true);
     try {
+      const idempotencyKey = orderIdempotencyKey.current ?? crypto.randomUUID();
+      orderIdempotencyKey.current = idempotencyKey;
       const order = await createOrder({
         registerId: registerCode,
         orderType: "TAKEAWAY",
@@ -195,7 +208,8 @@ export default function App() {
           productId: line.product.id,
           quantity: line.quantity,
         })),
-      });
+      }, idempotencyKey);
+      orderIdempotencyKey.current = null;
       setLastOrder(order);
       setCart([]);
       setNotice(`Order ${order.orderNumber} paid`);
@@ -203,6 +217,9 @@ export default function App() {
       if (actor && kdsRoles.has(actor.role) && bootstrap?.businessLocation.kdsEnabled) setKdsItems(await fetchActiveKds());
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : "Order failed");
+    } finally {
+      paymentInProgress.current = false;
+      setIsPaying(false);
     }
   };
   const saveCategory = async (event: React.FormEvent) => {
@@ -575,7 +592,7 @@ export default function App() {
                       className="real-product"
                       key={product.id}
                       disabled={
-                        product.trackInventory && product.availableQuantity <= 0
+                        isPaying || (product.trackInventory && product.availableQuantity <= 0)
                       }
                       onClick={() => addToCart(product)}
                     >
@@ -605,7 +622,15 @@ export default function App() {
                         : "Empty order"}
                     </h2>
                   </div>
-                  <button onClick={() => setCart([])}>Clear</button>
+                  <button
+                    disabled={isPaying}
+                    onClick={() => {
+                      orderIdempotencyKey.current = null;
+                      setCart([]);
+                    }}
+                  >
+                    Clear
+                  </button>
                 </div>
                 <div className="sale-lines">
                   {cart.map((line) => (
@@ -617,6 +642,7 @@ export default function App() {
                       <div className="stepper">
                         <button
                           onClick={() => changeQuantity(line.product.id, -1)}
+                          disabled={isPaying}
                         >
                           -
                         </button>
@@ -624,8 +650,9 @@ export default function App() {
                         <button
                           onClick={() => changeQuantity(line.product.id, 1)}
                           disabled={
-                            line.product.trackInventory &&
-                            line.quantity >= line.product.availableQuantity
+                            isPaying ||
+                            (line.product.trackInventory &&
+                              line.quantity >= line.product.availableQuantity)
                           }
                         >
                           +
@@ -647,6 +674,7 @@ export default function App() {
                   Payment
                   <select
                     value={paymentMethod}
+                    disabled={isPaying}
                     onChange={(event) => setPaymentMethod(event.target.value)}
                   >
                     <option value="CASH">Cash</option>
@@ -656,10 +684,10 @@ export default function App() {
                 </label>
                 <button
                   className="primary-button"
-                  disabled={!cart.length}
+                  disabled={!cart.length || isPaying}
                   onClick={() => void completeSale()}
                 >
-                  Take payment
+                  {isPaying ? "Processing payment..." : "Take payment"}
                 </button>
               </aside>
             </div>

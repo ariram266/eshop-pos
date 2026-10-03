@@ -63,7 +63,7 @@ const salesDateQuery = (from?: string, to?: string) => {
 }
 export const fetchSalesHistory = (from?: string, to?: string) => request<SalesHistory[]>(`/api/sales${salesDateQuery(from, to)}`)
 export const fetchSalesSummary = (from?: string, to?: string) => request<SalesSummary>(`/api/reports/sales${salesDateQuery(from, to)}`)
-export const createOrder = (input: { registerId: string; orderType: string; paymentMethod: string; lines: Array<{ productId: string; quantity: number }> }) => request<Order>('/api/orders', { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(input) })
+export const createOrder = (input: { registerId: string; orderType: string; paymentMethod: string; lines: Array<{ productId: string; quantity: number }> }, idempotencyKey: string = crypto.randomUUID()) => request<Order>('/api/orders', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(input) })
 
 export { signOut, startEntraLogin }
 

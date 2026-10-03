@@ -18,6 +18,7 @@ Included in this milestone:
 - KDS pending, accepted, preparing, ready, completed, and cancelled transitions
 - Location-scoped KDS enable/disable setting managed by location managers
 - Organization timezone setting with UTC timestamp storage and business-local reports
+- Business-date, sequential invoice numbers allocated transactionally per organization
 - Organization timezone setting with UTC timestamp storage and business-local reports
 - SQL recovery endpoint for missed KDS notifications
 - Post-commit Web PubSub notification hook

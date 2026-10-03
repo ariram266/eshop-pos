@@ -108,7 +108,15 @@ public sealed class OrderService(SqlConnectionFactory connections, KdsService kd
             var lineGross = price * requested.Quantity; var lineTax = Math.Round(lineGross * gstRate / 100m, 2); subtotal += lineGross - lineTax;
             lines.Add(new(requested.ProductId, name, requested.Quantity, price, lineTax, station, gstRate, cgstRate, sgstRate));
         }
-        var tax = lines.Sum(line => line.TaxAmount); var total = subtotal + tax; var orderId = Guid.NewGuid(); var number = $"{DateTimeOffset.UtcNow:yyMMdd}-{Random.Shared.Next(1000, 10000)}";
+        var tax = lines.Sum(line => line.TaxAmount); var total = subtotal + tax; var orderId = Guid.NewGuid();
+        string organizationTimeZoneId;
+        await using (var timeZoneCommand = new SqlCommand("SELECT TimeZone FROM Organizations WHERE Id=@org;", connection, transaction))
+        {
+            timeZoneCommand.Parameters.AddWithValue("org", actor.OrganizationId);
+            organizationTimeZoneId = await timeZoneCommand.ExecuteScalarAsync(cancellationToken) as string ?? "UTC";
+        }
+        var businessDate = BusinessTimeZone.Today(BusinessTimeZone.FindOrUtc(organizationTimeZoneId));
+        var number = await OrderNumberGenerator.NextAsync(connection, transaction, actor.OrganizationId, businessDate, cancellationToken);
         await using (var command = new SqlCommand("INSERT INTO Orders (Id,OrganizationId,LocationId,RegisterId,OrderNumber,Channel,OrderType,Status,Subtotal,Tax,Total,CreatedBy) VALUES (@id,@org,@location,@register,@number,'POS',@type,'PAID',@subtotal,@tax,@total,@user);", connection, transaction))
         {
             command.Parameters.AddWithValue("id", orderId); command.Parameters.AddWithValue("org", actor.OrganizationId); command.Parameters.AddWithValue("location", actor.LocationId); command.Parameters.AddWithValue("register", input.RegisterId); command.Parameters.AddWithValue("number", number); command.Parameters.AddWithValue("type", input.OrderType); command.Parameters.AddWithValue("subtotal", subtotal); command.Parameters.AddWithValue("tax", tax); command.Parameters.AddWithValue("total", total); command.Parameters.AddWithValue("user", actor.UserId); await command.ExecuteNonQueryAsync(cancellationToken);

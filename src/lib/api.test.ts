@@ -26,6 +26,18 @@ describe('createOrder', () => {
     expect(request[1].headers['Idempotency-Key']).toEqual(expect.any(String))
   })
 
+  it('uses the same supplied idempotency key when retrying an order', async () => {
+    const response = { id: 'order-2', orderNumber: '261002-0001' }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const idempotencyKey = 'retry-safe-order-key'
+
+    await createOrder({ registerId: 'register-01', orderType: 'TAKEAWAY', paymentMethod: 'CASH', lines: [{ productId: 'product-1', quantity: 1 }] }, idempotencyKey)
+
+    const request = fetchMock.mock.calls[0]
+    expect(request[1].headers['Idempotency-Key']).toBe(idempotencyKey)
+  })
+
   it('builds the thermal receipt layout with invoice totals', () => {
     const html = buildReceiptHtml({
       id: 'order-1',

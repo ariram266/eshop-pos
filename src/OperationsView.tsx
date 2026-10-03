@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   createSupplier,
   fetchInventory,
@@ -199,6 +199,10 @@ export function getSalesGroupKey(entry: SalesLineEntry, groupBy: SalesGrouping) 
   return entry.item.paymentMethod?.toUpperCase() || "UNKNOWN";
 }
 
+export function sumSalesGroupQuantity(entries: SalesLineEntry[]) {
+  return entries.reduce((sum, entry) => sum + entry.line.quantity, 0);
+}
+
 export function OperationsView({
   bootstrap,
   locationId,
@@ -248,6 +252,7 @@ export function OperationsView({
   const [groupBy, setGroupBy] = useState<
     "none" | SalesGrouping
   >("none");
+  const [collapsedSalesGroups, setCollapsedSalesGroups] = useState<Record<string, boolean>>({});
   const purchasableProducts = bootstrap.products.filter(isPurchasableProduct);
   const pickerProducts = purchasableProducts.filter((product) =>
     matchesProductSearch(product, productPickerSearch),
@@ -1097,19 +1102,34 @@ export function OperationsView({
                         const groupTotals = summarizeSalesTotals(
                           entries.map((entry) => ({ ...entry.item, lines: [entry.line] })),
                         );
+                        const groupKey = `${groupBy}:${groupLabel}`;
+                        const collapsed = collapsedSalesGroups[groupKey] ?? false;
                         return (
-                          <>
-                            <tr key={`group-${groupLabel}`} className="group-row">
-                              <td colSpan={6}>
-                                {groupLabel} ({entries.length})
+                          <Fragment key={groupKey}>
+                            <tr className="group-row">
+                              <td colSpan={5}>
+                                <button
+                                  type="button"
+                                  className="group-toggle"
+                                  aria-expanded={!collapsed}
+                                  aria-label={`${collapsed ? "Show" : "Hide"} items in ${groupLabel}`}
+                                  onClick={() => setCollapsedSalesGroups((current) => ({
+                                    ...current,
+                                    [groupKey]: !collapsed,
+                                  }))}
+                                >
+                                  {collapsed ? "Show items" : "Hide items"}
+                                </button>
+                                {groupLabel} ({entries.length} lines)
                               </td>
+                              <td>{sumSalesGroupQuantity(entries)}</td>
                               <td>{groupTotals.grossSales.toFixed(2)}</td>
                               <td>{groupTotals.tax.toFixed(2)}</td>
                               <td />
                               <td />
                               <td>{groupTotals.netSales.toFixed(2)}</td>
                             </tr>
-                            {entries.map((entry, entryIndex) => (
+                            {!collapsed && entries.map((entry, entryIndex) => (
                               <SalesLineRow
                                 key={`${groupLabel}-${entry.item.orderId}-${entry.line.productId}-${entryIndex}`}
                                 item={entry.item}
@@ -1117,7 +1137,7 @@ export function OperationsView({
                                 timeZone={timeZone}
                               />
                             ))}
-                          </>
+                          </Fragment>
                         );
                       })}
                 </tbody>

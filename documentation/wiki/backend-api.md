@@ -45,6 +45,8 @@ Product bootstrap responses include HSN, GST, computed CGST, computed SGST, and 
 
 POS product prices are gross amounts. During order creation, the server calculates line GST as `gross * GST rate / 100`, stores the net line sum as `Orders.Subtotal`, stores the GST sum as `Orders.Tax`, and stores gross as `Orders.Total` (`subtotal + tax`). Payment capture uses the gross order total.
 
+New invoice numbers use the organization's configured business date and a transactionally allocated per-organization daily sequence (`yyMMdd-0001`, `yyMMdd-0002`, ...). The suffix has a minimum width of four digits and expands after `9999`. Existing invoice numbers are unchanged; if a legacy number occupies the next sequence value, allocation skips it. The sequence row and order insert commit in the same serializable transaction.
+
 When a product's explicit GST rate is zero for legacy data, order creation falls back to the linked tax-rule rate and derives equal CGST and SGST rates. Receipt item Tax displays the GST amount only; the rate is not repeated in that column. Receipt totals show Sub Total, CGST, SGST, and TOTAL without a separate GST row.
 
 `GET /api/pos/bootstrap` also returns `businessLocation` with the organization name, active location name, optional location GST number, and organization `timeZone`. Browser receipts use these values for the business header and format the sale time in the configured organization timezone.

@@ -57,6 +57,9 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px 
 .summary-grid-secondary { margin-top: 0; }
 .sales-full-width { display: grid; gap: 18px; width: 100%; }
 .sales-panel-full { width: 100%; }
+.group-row td { background: #eef4f1; color: var(--ink); font-weight: 700; }
+.group-toggle { margin-right: 10px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; background: #ffffff; color: var(--primary-dark); font-size: 10px; font-weight: 700; cursor: pointer; }
+.group-toggle:hover { border-color: var(--primary-dark); }
 .sales-filters-row { width: 100%; }
 .sales-filters-row .filter-bar { margin: 0; }
 .report-tabs { display: flex; gap: 8px; margin-top: 10px; }

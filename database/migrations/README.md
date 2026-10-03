@@ -19,5 +19,6 @@ The first production milestone covers:
 11. Purchase-edit permission for OrganizationOwner, OperationsManager, and StoreManager
 12. Location-scoped KDS enable/disable setting and management permission
 13. Purchase-line inventory effect for service expense purchases
+14. Per-organization business-date invoice number sequences
 
 The application never creates or alters schema at startup. Production migrations require review and must be backward-compatible with the deployed Functions version.

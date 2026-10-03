@@ -6,6 +6,22 @@ namespace Counterpoint.CloudApi.Tests;
 public sealed class BusinessTimeZoneTests
 {
     [Fact]
+    public void Invoice_numbers_start_at_four_digits_and_expand_after_9999()
+    {
+        var businessDate = new DateOnly(2026, 10, 2);
+
+        Assert.Equal("261002-0001", OrderNumberGenerator.Format(businessDate, 1));
+        Assert.Equal("261002-9999", OrderNumberGenerator.Format(businessDate, 9999));
+        Assert.Equal("261002-10000", OrderNumberGenerator.Format(businessDate, 10000));
+    }
+
+    [Fact]
+    public void Invoice_numbers_reject_zero_or_negative_sequences()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => OrderNumberGenerator.Format(new DateOnly(2026, 10, 2), 0));
+    }
+
+    [Fact]
     public void Kolkata_day_bounds_convert_to_utc_without_changing_the_business_date()
     {
         var timeZone = BusinessTimeZone.Find("Asia/Kolkata");

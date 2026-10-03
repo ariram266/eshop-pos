@@ -10,6 +10,7 @@ import {
   productOptionValue,
   summarizePurchaseTotals,
   summarizeSalesTotals,
+  sumSalesGroupQuantity,
 } from './OperationsView'
 
 describe('OperationsView helpers', () => {
@@ -49,6 +50,33 @@ describe('OperationsView helpers', () => {
 
     expect(getSalesGroupKey({ item, line }, 'paymentType')).toBe('UPI')
     expect(getSalesGroupKey({ item: { ...item, paymentMethod: 'CASH' }, line }, 'paymentType')).toBe('CASH')
+  })
+
+  it('sums quantities displayed in a sales group header', () => {
+    const item = {
+      orderId: 'sale-1',
+      orderNumber: 'INV-101',
+      total: 80,
+      status: 'PAID',
+      paymentStatus: 'PAID',
+      paymentMethod: 'CASH',
+      createdAt: '2026-10-02T10:00:00Z',
+      lines: [],
+    }
+    const line = {
+      productId: 'product-1',
+      productName: 'Coffee',
+      categoryName: 'Drinks',
+      hsnCode: '2202',
+      gstRate: 5,
+      cgstRate: 2.5,
+      sgstRate: 2.5,
+      quantity: 2.5,
+      unitPrice: 32,
+      taxAmount: 4,
+    }
+
+    expect(sumSalesGroupQuantity([{ item, line }, { item, line: { ...line, quantity: 1.5 } }])).toBe(4)
   })
 
   it('creates a searchable product label with SKU', () => {
