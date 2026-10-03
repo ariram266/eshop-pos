@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateSalesLineAmounts,
+  formatDateTimeInTimeZone,
+  getSalesGroupKey,
+  getBusinessDateKey,
+  getBusinessDateRange,
+  isPurchasableProduct,
   matchesProductSearch,
   productOptionValue,
   summarizePurchaseTotals,
@@ -8,9 +13,54 @@ import {
 } from './OperationsView'
 
 describe('OperationsView helpers', () => {
+  it('uses the organization timezone for business dates and date ranges', () => {
+    const instant = '2026-10-01T19:00:00.000Z'
+    expect(getBusinessDateKey(instant, 'Asia/Kolkata')).toBe('2026-10-02')
+    expect(getBusinessDateRange('today', '', '', 'Asia/Kolkata', new Date(instant)))
+      .toEqual({ from: '2026-10-02', to: '2026-10-02' })
+    expect(formatDateTimeInTimeZone(instant, 'Asia/Kolkata')).not.toBe(
+      formatDateTimeInTimeZone(instant, 'America/Chicago'),
+    )
+  })
+
+  it('groups sales lines by payment type', () => {
+    const item = {
+      orderId: 'sale-1',
+      orderNumber: 'INV-100',
+      total: 100,
+      status: 'PAID',
+      paymentStatus: 'PAID',
+      paymentMethod: 'UPI',
+      createdAt: '2026-10-02T10:00:00Z',
+      lines: [],
+    }
+    const line = {
+      productId: 'product-1',
+      productName: 'Coffee',
+      categoryName: 'Drinks',
+      hsnCode: '2202',
+      gstRate: 5,
+      cgstRate: 2.5,
+      sgstRate: 2.5,
+      quantity: 1,
+      unitPrice: 100,
+      taxAmount: 5,
+    }
+
+    expect(getSalesGroupKey({ item, line }, 'paymentType')).toBe('UPI')
+    expect(getSalesGroupKey({ item: { ...item, paymentMethod: 'CASH' }, line }, 'paymentType')).toBe('CASH')
+  })
+
   it('creates a searchable product label with SKU', () => {
     expect(productOptionValue({ sku: 'COFFEE-01', name: 'Coffee', productType: 'MENU_ITEM' }))
       .toBe('COFFEE-01 • Coffee • MENU_ITEM')
+  })
+
+  it('allows service items and tracked products in purchases, but excludes other non-stock items', () => {
+    expect(isPurchasableProduct({ trackInventory: false, productType: 'SERVICE' })).toBe(true)
+    expect(isPurchasableProduct({ trackInventory: true, productType: 'MERCHANDISE' })).toBe(true)
+    expect(isPurchasableProduct({ trackInventory: false, productType: 'NON_STOCK' })).toBe(false)
+    expect(isPurchasableProduct({ trackInventory: false, productType: 'MENU_ITEM' })).toBe(false)
   })
 
   it('matches inventory products by sku or product name', () => {
@@ -51,6 +101,7 @@ describe('OperationsView helpers', () => {
         total: 84,
         status: 'PAID',
         paymentStatus: 'PAID',
+        paymentMethod: 'CASH',
         createdAt: '2026-09-25T10:00:00Z',
         lines: [
           {

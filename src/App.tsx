@@ -90,7 +90,7 @@ export default function App() {
       ]);
       setActor(currentActor);
       setBootstrap(catalog);
-      if (kdsRoles.has(currentActor.role)) setKdsItems(await fetchActiveKds());
+      if (kdsRoles.has(currentActor.role) && catalog.businessLocation.kdsEnabled) setKdsItems(await fetchActiveKds());
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Cloud API unavailable",
@@ -109,14 +109,18 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!actor) return;
-    if (!kdsRoles.has(actor.role)) return;
+    if (!kdsRoles.has(actor.role) || !bootstrap?.businessLocation.kdsEnabled) return;
     const timer = window.setInterval(() => {
       void fetchActiveKds()
         .then(setKdsItems)
         .catch(() => undefined);
     }, 15000);
     return () => window.clearInterval(timer);
-  }, [actor]);
+  }, [actor, bootstrap?.businessLocation.kdsEnabled]);
+
+  useEffect(() => {
+    if (!bootstrap?.businessLocation.kdsEnabled && mode === "kds") setMode("pos");
+  }, [bootstrap?.businessLocation.kdsEnabled, mode]);
 
   const products = useMemo(
     () =>
@@ -196,7 +200,7 @@ export default function App() {
       setCart([]);
       setNotice(`Order ${order.orderNumber} paid`);
       setBootstrap(await fetchPosBootstrap());
-      if (actor && kdsRoles.has(actor.role)) setKdsItems(await fetchActiveKds());
+      if (actor && kdsRoles.has(actor.role) && bootstrap?.businessLocation.kdsEnabled) setKdsItems(await fetchActiveKds());
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : "Order failed");
     }
@@ -449,7 +453,7 @@ export default function App() {
           >
             POS
           </button>
-          {kdsRoles.has(actor.role) && (
+          {kdsRoles.has(actor.role) && bootstrap.businessLocation.kdsEnabled && (
             <button
               className={mode === "kds" ? "active" : ""}
               onClick={() => setMode("kds")}
@@ -517,6 +521,13 @@ export default function App() {
             locationId={actor.locationId}
             role={actor.role}
             onInventoryChanged={async () => setBootstrap(await fetchPosBootstrap())}
+            onKdsEnabledChanged={(enabled) => {
+              setBootstrap((current) => current ? { ...current, businessLocation: { ...current.businessLocation, kdsEnabled: enabled } } : current);
+              if (!enabled) setKdsItems([]);
+            }}
+            onTimeZoneChanged={(timeZone) => {
+              setBootstrap((current) => current ? { ...current, businessLocation: { ...current.businessLocation, timeZone } } : current);
+            }}
             initialTab={
               actor.role === "Cashier" || actor.role === "CounterStaff"
                 ? "purchases"

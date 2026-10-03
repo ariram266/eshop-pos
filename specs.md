@@ -458,6 +458,8 @@ Mutable entities generally contain:
     status
     created_at
     updated_at
+
+`Organization.TimeZone` stores a validated IANA time-zone identifier such as `Asia/Kolkata`. Persist order and operational timestamps as UTC instants; never rewrite existing timestamps when the organization changes its display timezone. Bootstrap returns the configured timezone for UI formatting. Business-date report ranges use local calendar dates in this timezone and are converted to UTC bounds by the API before querying.
     
 
 * * *
@@ -687,9 +689,9 @@ Product types:
 
 `SERVICE` allows future tourism features to reuse the commerce model.
 
-Examples of non-purchased catalog items include a `SERVICE` such as table service, delivery fee, equipment rental, or a guided farm visit, and a `NON_STOCK` item such as a gift wrap charge, custom message, donation, or digital voucher. These items may be sold but do not represent purchased inventory and must not be received through purchasing.
+`SERVICE` represents a service sold to a customer or purchased from a vendor as an expense, such as table service, delivery, equipment rental, or a guided farm visit. A `NON_STOCK` item represents a sales-only charge such as gift wrap, a custom message, donation, or digital voucher and is not received through purchasing.
 
-Inventory tracking is explicit. `STOCKED_PRODUCT` is used for raw materials and other purchased stock; `MERCHANDISE` is used for purchased finished goods for resale. `PREPARED_PRODUCT` and `MENU_ITEM` represent items made or assembled from tracked inputs and do not receive direct purchase stock. `SERVICE` and `NON_STOCK` never create inventory balances. Purchase receiving accepts only products with `track_inventory = true`.
+Inventory tracking is explicit. `STOCKED_PRODUCT` is used for raw materials and other purchased stock; `MERCHANDISE` is used for purchased finished goods for resale. `PREPARED_PRODUCT` and `MENU_ITEM` represent items made or assembled from tracked inputs and do not receive direct purchase stock. `SERVICE` and `NON_STOCK` never create inventory balances. Purchase receiving accepts products with `track_inventory = true` and `SERVICE`; service lines record expense quantity and cost without inventory balances or stock movements. Other non-tracked product types remain excluded from purchasing.
 
 * * *
 
@@ -941,6 +943,7 @@ PurchaseLine
     tax
     line_total
     batch_id
+    affects_inventory
     
 
 Statuses:
@@ -1433,11 +1436,13 @@ The bootstrap endpoint exists to avoid unnecessary API calls during normal POS u
     GET  /api/production-batches
     POST /api/production-batches
 
-Supplier and received-purchase administration is organization-scoped. Vendors are editable through `PATCH /api/suppliers/{id}`. A single purchase reference may contain multiple inventory-tracked product lines for the same vendor and receipt. Receiving must create or increment the location's `InventoryBalances` row for every line so the received quantity is immediately available to POS sales. Editing a received purchase requires `inventory.adjust` and is granted to `OrganizationOwner`, `OperationsManager`, and `StoreManager`; it is transactional: the previous receipt lines are reversed, the replacement lines are applied, and both inventory changes are recorded as stock movements. The operation is rejected when reversing the previous receipt would make on-hand inventory negative.
+Supplier and received-purchase administration is organization-scoped. Vendors are editable through `PATCH /api/suppliers/{id}`. A single purchase reference may contain inventory-tracked product lines and `SERVICE` expense lines for the same vendor and receipt. Receiving creates or increments inventory balances and stock movements only for tracked lines; service lines contribute quantity times unit cost to purchase spend without changing stock. Each purchase line records whether it affects inventory so later edits can reverse only the original stock-affecting lines. Editing a received purchase requires `inventory.adjust` and is granted to `OrganizationOwner`, `OperationsManager`, and `StoreManager`; it is transactional, and is rejected when reversing the previous tracked receipt would make on-hand inventory negative.
 
-Operational views provide catalog filters by name/SKU, category, and HSN. Purchase and sales history views provide name/reference search, daily/weekly/monthly/custom date filters, and grouping selectors for name, category, HSN, and invoice/reference. Purchase filters and grouping controls are contained within the purchase list panel. Receiving captures one common vendor and invoice/reference, then uses searchable product results in a Product/Qty/Unit Price table; rows can be added or removed and every selected product ID is submitted in one transaction. Vendors and Purchases are separate subviews under Operations. KDS remains a separate operational mode and is not duplicated inside the POS screen. POS ordering allows active tracked and non-tracked products; tracked products require inventory and create stock movements, while non-tracked prepared/service/non-stock products create order lines without inventory mutation.
+`PATCH /api/settings/time-zone` updates the organization IANA timezone in `Organizations.TimeZone`. All event timestamps, including `CreatedAt`, remain UTC instants in storage; changing the timezone only affects display and date-range interpretation, and does not rewrite historical rows. Sales date filters accept business-local `yyyy-MM-dd` values; the API converts local midnight boundaries to UTC, using a half-open interval so daylight-saving transitions are handled correctly. Without a requested date range, sales history remains limited to the latest 100 orders.
 
-Sales history displays one row per sold item with invoice, HSN, category, item, sale date/time, quantity, gross amount, GST rate and amount, CGST rate and amount, SGST rate and amount, and net amount. For each displayed line, gross is `unit price * quantity`; CGST amount is `gross * CGST rate / 100`; SGST amount is `gross * SGST rate / 100`; GST amount is CGST plus SGST; and net amount is gross minus GST.
+Operational views provide catalog filters by name/SKU, category, and HSN. Purchase and sales history views provide name/reference search, daily/weekly/monthly/custom date filters, and grouping selectors for name, category, HSN, and invoice/reference. Sales history additionally groups by payment method (Cash or UPI). Purchase filters and grouping controls are contained within the purchase list panel. Selecting a grouping option switches the table to one row per line item, grouped under a header row per distinct name/category/HSN/invoice/payment-method value; the header row shows the member count and the group's subtotal (quantity and amount for purchases; gross, GST, and net for sales). With no grouping selected, purchases render one row per receipt and sales render one row per sold item, as before. Receiving captures one common vendor and invoice/reference, then uses searchable product results in a Product/Qty/Unit Price table; rows can be added or removed and every selected product ID is submitted in one transaction. Vendors and Purchases are separate subviews under Operations. KDS remains a separate operational mode and is not duplicated inside the POS screen. A location manager can enable or disable KDS from Operations settings; the setting defaults to enabled, controls whether new orders create KDS work, and blocks KDS reads/status updates while disabled. POS ordering allows active tracked and non-tracked products; tracked products require inventory and create stock movements, while non-tracked prepared/service/non-stock products create order lines without inventory mutation.
+
+Sales history returns each order's successful payment method for grouping by Cash or UPI. It displays one row per sold item with invoice, HSN, category, item, sale date/time, quantity, gross amount, GST rate and amount, CGST rate and amount, SGST rate and amount, and net amount. For each displayed line, gross is `unit price * quantity`; CGST amount is `gross * CGST rate / 100`; SGST amount is `gross * SGST rate / 100`; GST amount is CGST plus SGST; and net amount is gross minus GST. Without a date range, history is capped at the 100 most recent orders (not 100 rows), so a capped order always includes all its line items. With a business-local date range, the API returns all matching orders; the sales summary totals (orders/qty/gross/GST/net) are computed client-side from the currently filtered results.
 
 POS prices are gross amounts. For every order line, GST is calculated as `gross * GST rate / 100`, net line amount is `gross - GST`, order subtotal is the sum of net line amounts, order tax is the sum of GST amounts, and order total is gross (`subtotal + tax`). The server is authoritative for these persisted order totals and payment amounts.
 

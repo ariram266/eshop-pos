@@ -16,6 +16,9 @@ Included in this milestone:
 - Serializable/idempotent order transaction
 - Guarded inventory decrement and append-only stock movement
 - KDS pending, accepted, preparing, ready, completed, and cancelled transitions
+- Location-scoped KDS enable/disable setting managed by location managers
+- Organization timezone setting with UTC timestamp storage and business-local reports
+- Organization timezone setting with UTC timestamp storage and business-local reports
 - SQL recovery endpoint for missed KDS notifications
 - Post-commit Web PubSub notification hook
 - Browser receipt printing

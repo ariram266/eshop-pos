@@ -46,7 +46,7 @@ describe('createOrder', () => {
         cgstRate: 2.5,
         sgstRate: 2.5,
       }],
-    }, { businessName: 'Counterpoint Foods', locationName: 'Head Office', gstNumber: '33ABCDE1234F1Z5' })
+    }, { businessName: 'Counterpoint Foods', locationName: 'Head Office', gstNumber: '33ABCDE1234F1Z5', kdsEnabled: true, timeZone: 'Asia/Kolkata' })
 
     expect(html).toContain('Counterpoint Foods')
     expect(html).toContain('Head Office')

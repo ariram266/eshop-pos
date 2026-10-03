@@ -25,13 +25,13 @@ public sealed class OrderService(SqlConnectionFactory connections, KdsService kd
         var stations = new List<PreparationStationDto>();
         BusinessLocationDto businessLocation;
 
-        await using (var command = new SqlCommand("SELECT o.Name,l.Name,l.GstNumber FROM Organizations o JOIN Locations l ON l.OrganizationId=o.Id WHERE o.Id=@org AND l.Id=@location AND l.Active=1;", connection))
+        await using (var command = new SqlCommand("SELECT o.Name,l.Name,l.GstNumber,l.KdsEnabled,o.TimeZone FROM Organizations o JOIN Locations l ON l.OrganizationId=o.Id WHERE o.Id=@org AND l.Id=@location AND l.Active=1;", connection))
         {
             command.Parameters.AddWithValue("org", actor.OrganizationId);
             command.Parameters.AddWithValue("location", actor.LocationId);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken)) throw new InvalidOperationException("Business location is unavailable.");
-            businessLocation = new(reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2));
+            businessLocation = new(reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetBoolean(3), BusinessTimeZone.FindOrUtc(reader.GetString(4)).Id);
         }
 
         await using (var command = new SqlCommand("SELECT Id, Name, ParentId, Active FROM Categories WHERE OrganizationId=@org AND Active=1 ORDER BY Name;", connection))
@@ -128,7 +128,13 @@ public sealed class OrderService(SqlConnectionFactory connections, KdsService kd
             item.Parameters.AddWithValue("id", Guid.NewGuid()); item.Parameters.AddWithValue("movement", Guid.NewGuid()); item.Parameters.AddWithValue("org", actor.OrganizationId); item.Parameters.AddWithValue("order", orderId); item.Parameters.AddWithValue("location", actor.LocationId); item.Parameters.AddWithValue("product", line.ProductId); item.Parameters.AddWithValue("quantity", line.Quantity); item.Parameters.AddWithValue("price", line.UnitPrice); item.Parameters.AddWithValue("tax", line.TaxAmount); item.Parameters.AddWithValue("user", actor.UserId); await item.ExecuteNonQueryAsync(cancellationToken);
         }
         await _payments.CaptureAsync(connection, transaction, actor, orderId, total, input.PaymentMethod, cancellationToken);
-        await _kds.CreateWorkItemsAsync(connection, transaction, actor, orderId, number, lines, cancellationToken);
+        await using (var kdsSetting = new SqlCommand("SELECT KdsEnabled FROM Locations WHERE Id=@location AND OrganizationId=@org AND Active=1;", connection, transaction))
+        {
+            kdsSetting.Parameters.AddWithValue("location", actor.LocationId);
+            kdsSetting.Parameters.AddWithValue("org", actor.OrganizationId);
+            if (await kdsSetting.ExecuteScalarAsync(cancellationToken) is true)
+                await _kds.CreateWorkItemsAsync(connection, transaction, actor, orderId, number, lines, cancellationToken);
+        }
         var result = new OrderDto(orderId, number, "PAID", subtotal, tax, total, "PAID", lines, DateTimeOffset.UtcNow);
         await using (var command = new SqlCommand("INSERT INTO IdempotencyKeys (OrganizationId,IdempotencyKey,ResponseJson) VALUES (@org,@key,@json);", connection, transaction)) { command.Parameters.AddWithValue("org", actor.OrganizationId); command.Parameters.AddWithValue("key", idempotencyKey); command.Parameters.AddWithValue("json", JsonSerializer.Serialize(result)); await command.ExecuteNonQueryAsync(cancellationToken); }
         await transaction.CommitAsync(cancellationToken);

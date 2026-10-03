@@ -10,6 +10,12 @@ namespace Counterpoint.CloudApi.Functions;
 
 public sealed class OperationsFunctions(TenantContext tenantContext, AuthorizationService authorization, OperationsService operations)
 {
+    [Function("UpdateOrganizationTimeZone")]
+    public async Task<HttpResponseData> UpdateTimeZone([HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "settings/time-zone")] HttpRequestData request, CancellationToken cancellationToken) => await Execute(request, cancellationToken, "locations.manage", async actor => await operations.UpdateOrganizationTimeZoneAsync(actor, (await Body<UpdateTimeZoneRequest>(request, cancellationToken)).TimeZone, cancellationToken));
+
+    [Function("UpdateKdsSettings")]
+    public async Task<HttpResponseData> UpdateKdsSettings([HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "settings/kds")] HttpRequestData request, CancellationToken cancellationToken) => await Execute(request, cancellationToken, "locations.manage", async actor => await operations.UpdateKdsEnabledAsync(actor, (await Body<UpdateKdsSettingsRequest>(request, cancellationToken)).Enabled, cancellationToken));
+
     [Function("ListSuppliers")]
     public Task<HttpResponseData> Suppliers([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "suppliers")] HttpRequestData request, CancellationToken cancellationToken) => Execute(request, cancellationToken, "catalog.read", actor => operations.GetSuppliersAsync(actor, cancellationToken));
 
@@ -35,14 +41,12 @@ public sealed class OperationsFunctions(TenantContext tenantContext, Authorizati
     public Task<HttpResponseData> Movements([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "stock-movements")] HttpRequestData request, CancellationToken cancellationToken) => Execute(request, cancellationToken, "inventory.read", actor => operations.GetMovementsAsync(actor, cancellationToken));
 
     [Function("SalesHistory")]
-    public Task<HttpResponseData> Sales([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sales")] HttpRequestData request, CancellationToken cancellationToken) => Execute(request, cancellationToken, "orders.read", actor => operations.GetSalesAsync(actor, cancellationToken));
+    public Task<HttpResponseData> Sales([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sales")] HttpRequestData request, CancellationToken cancellationToken) => Execute(request, cancellationToken, "orders.read", actor => operations.GetSalesAsync(actor, ParseDate(request.Query["from"]), ParseDate(request.Query["to"]), cancellationToken));
 
     [Function("SalesSummary")]
     public async Task<HttpResponseData> Summary([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "reports/sales")] HttpRequestData request, CancellationToken cancellationToken)
     {
-        var from = DateTimeOffset.TryParse(request.Query["from"], out var parsedFrom) ? parsedFrom : DateTimeOffset.UtcNow.Date;
-        var to = DateTimeOffset.TryParse(request.Query["to"], out var parsedTo) ? parsedTo : DateTimeOffset.UtcNow.AddDays(1).Date;
-        return await Execute(request, cancellationToken, "orders.read", actor => operations.GetSalesSummaryAsync(actor, from, to, cancellationToken));
+        return await Execute(request, cancellationToken, "orders.read", actor => operations.GetSalesSummaryAsync(actor, ParseDate(request.Query["from"]), ParseDate(request.Query["to"]), cancellationToken));
     }
 
     private async Task<HttpResponseData> Execute<T>(HttpRequestData request, CancellationToken cancellationToken, string permission, Func<ActorContext, Task<T>> action)
@@ -52,4 +56,11 @@ public sealed class OperationsFunctions(TenantContext tenantContext, Authorizati
     }
 
     private static async Task<T> Body<T>(HttpRequestData request, CancellationToken cancellationToken) => await JsonSerializer.DeserializeAsync<T>(request.Body, new JsonSerializerOptions(JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true }, cancellationToken) ?? throw new ArgumentException("Invalid operations request.");
+
+    private static DateOnly? ParseDate(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (DateOnly.TryParseExact(value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed)) return parsed;
+        throw new ArgumentException("Sales dates must use yyyy-MM-dd format.");
+    }
 }

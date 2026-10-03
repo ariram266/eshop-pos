@@ -2,7 +2,7 @@ const cloudApi = import.meta.env.VITE_CLOUD_API_URL || ''
 import { accessToken, getPreferredLocalDevRole, isLocalDevelopment, signOut, startEntraLogin } from './auth'
 
 export type Actor = { organizationId: string; userId: string; locationId: string; role: string; displayName: string }
-export type BusinessLocation = { businessName: string; locationName: string; gstNumber?: string }
+export type BusinessLocation = { businessName: string; locationName: string; gstNumber?: string; kdsEnabled: boolean; timeZone: string }
 export type Product = { id: string; sku: string; name: string; categoryId: string; price: number; unit: string; availableQuantity: number; productType: string; preparationStationId?: string; taxRate: number; active: boolean; hsnCode?: string; gstRate: number; cgstRate: number; sgstRate: number; trackInventory: boolean }
 export type Category = { id: string; name: string; parentId?: string; active: boolean }
 export type TaxRule = { id: string; name: string; rate: number }
@@ -20,7 +20,7 @@ export type Purchase = { id: string; reference: string; supplierId: string; supp
 export type InventorySummary = { productId: string; sku: string; productName: string; onHand: number; reserved: number; available: number; reorderLevel: number; lowStock: boolean }
 export type StockMovement = { id: string; productId: string; productName: string; quantity: number; movementType: string; source?: string; createdAt: string }
 export type SalesHistoryLine = { productId: string; productName: string; categoryName: string; hsnCode?: string; gstRate: number; cgstRate: number; sgstRate: number; quantity: number; unitPrice: number; taxAmount: number }
-export type SalesHistory = { orderId: string; orderNumber: string; total: number; status: string; paymentStatus: string; createdAt: string; lines: SalesHistoryLine[] }
+export type SalesHistory = { orderId: string; orderNumber: string; total: number; status: string; paymentStatus: string; paymentMethod: string; createdAt: string; lines: SalesHistoryLine[] }
 export type SalesSummary = { orderCount: number; grossSales: number; tax: number; netSales: number; from: string; to: string }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -40,6 +40,8 @@ export const fetchActor = () => request<Actor>('/api/auth/me')
 export const fetchPosBootstrap = () => request<PosBootstrap>('/api/pos/bootstrap')
 export const fetchActiveKds = () => request<KdsWorkItem[]>('/api/kds/orders/active')
 export const updateKdsStatus = (id: string, status: string) => request<KdsWorkItem>(`/api/kds/orders/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) })
+export const updateKdsSettings = (enabled: boolean) => request<{ enabled: boolean }>('/api/settings/kds', { method: 'PATCH', body: JSON.stringify({ enabled }) })
+export const updateOrganizationTimeZone = (timeZone: string) => request<{ timeZone: string }>('/api/settings/time-zone', { method: 'PATCH', body: JSON.stringify({ timeZone }) })
 export const createCategory = (name: string, parentId?: string) => request<Category>('/api/categories', { method: 'POST', body: JSON.stringify({ name, parentId: parentId || null }) })
 export const updateCategory = (id: string, input: { name: string; parentId?: string; active: boolean }) => request<Category>(`/api/categories/${id}`, { method: 'PATCH', body: JSON.stringify({ ...input, parentId: input.parentId || null }) })
 export const createProduct = (input: { sku: string; name: string; categoryId: string; price: number; unit: string; productType: string; hsnCode?: string; gstRate: number; trackInventory: boolean }) => request<CatalogProduct>('/api/products', { method: 'POST', body: JSON.stringify(input) })
@@ -52,8 +54,15 @@ export const receivePurchase = (input: { supplierId: string; locationId: string;
 export const updatePurchase = (id: string, input: { supplierId: string; locationId: string; reference: string; lines: Array<{ productId: string; quantity: number; unitCost: number }> }) => request<void>(`/api/purchases/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
 export const fetchInventory = () => request<InventorySummary[]>('/api/inventory')
 export const fetchStockMovements = () => request<StockMovement[]>('/api/stock-movements')
-export const fetchSalesHistory = () => request<SalesHistory[]>('/api/sales')
-export const fetchSalesSummary = () => request<SalesSummary>('/api/reports/sales')
+const salesDateQuery = (from?: string, to?: string) => {
+  const params = new URLSearchParams()
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+export const fetchSalesHistory = (from?: string, to?: string) => request<SalesHistory[]>(`/api/sales${salesDateQuery(from, to)}`)
+export const fetchSalesSummary = (from?: string, to?: string) => request<SalesSummary>(`/api/reports/sales${salesDateQuery(from, to)}`)
 export const createOrder = (input: { registerId: string; orderType: string; paymentMethod: string; lines: Array<{ productId: string; quantity: number }> }) => request<Order>('/api/orders', { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(input) })
 
 export { signOut, startEntraLogin }
@@ -71,7 +80,7 @@ const escapeHtml = (value: string) =>
   })
 
 export function buildReceiptHtml(order: Order, businessLocation?: BusinessLocation) {
-  const business = businessLocation ?? { businessName: 'Counterpoint', locationName: 'Head Office', gstNumber: undefined }
+  const business = businessLocation ?? { businessName: 'Counterpoint', locationName: 'Head Office', gstNumber: undefined, kdsEnabled: true, timeZone: 'UTC' }
   const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
   const lineAmounts = order.lines.map((line) => {
     const gross = line.unitPrice * line.quantity
@@ -95,6 +104,7 @@ export function buildReceiptHtml(order: Order, businessLocation?: BusinessLocati
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
+    timeZone: business.timeZone,
   })
   const lines = lineAmounts
     .map(

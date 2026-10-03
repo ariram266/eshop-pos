@@ -8,6 +8,8 @@ import {
   fetchStockMovements,
   fetchSuppliers,
   receivePurchase,
+  updateKdsSettings,
+  updateOrganizationTimeZone,
   updatePurchase,
   updateSupplier,
   type InventorySummary,
@@ -58,30 +60,68 @@ const emptyPurchaseForm = (): PurchaseForm => ({
 });
 export const productOptionValue = (product: Pick<Product, "sku" | "name" | "productType">) =>
   `${product.sku} • ${product.name} • ${product.productType}`;
-const startOfPeriod = (period: Period) => {
-  const date = new Date();
-  if (period === "today") date.setHours(0, 0, 0, 0);
-  if (period === "week") {
-    date.setDate(date.getDate() - 6);
-    date.setHours(0, 0, 0, 0);
-  }
-  if (period === "month") {
-    date.setDate(1);
-    date.setHours(0, 0, 0, 0);
-  }
-  return date;
+export const isPurchasableProduct = (product: Pick<Product, "trackInventory" | "productType">) =>
+  product.trackInventory || product.productType === "SERVICE";
+export function getBusinessDateKey(value: string | Date, timeZone: string) {
+  const instant = value instanceof Date ? value : new Date(value);
+  const parts = new Map(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .formatToParts(instant)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.get("year")}-${parts.get("month")}-${parts.get("day")}`;
+}
+
+const shiftBusinessDate = (dateKey: string, days: number) => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 };
-const matchesPeriod = (
+
+export function getBusinessDateRange(
+  period: Period,
+  from: string,
+  to: string,
+  timeZone: string,
+  now = new Date(),
+) {
+  if (!period) return null;
+  if (period === "custom") return { from: from || undefined, to: to || undefined };
+  const today = getBusinessDateKey(now, timeZone);
+  const start = period === "today"
+    ? today
+    : period === "week"
+      ? shiftBusinessDate(today, -6)
+      : `${today.slice(0, 7)}-01`;
+  return { from: start, to: today };
+}
+
+export function matchesPeriod(
   value: string,
   period: Period,
   from: string,
   to: string,
-) => {
+  timeZone = "UTC",
+): boolean {
+  const businessDate = getBusinessDateKey(value, timeZone);
   if (period === "custom")
-    return (!from || value >= from) && (!to || value <= `${to}T23:59:59`);
+    return (!from || businessDate >= from) && (!to || businessDate <= to);
   if (!period) return true;
-  return new Date(value) >= startOfPeriod(period);
-};
+  return businessDate >= (getBusinessDateRange(period, from, to, timeZone)?.from ?? businessDate);
+}
+
+export function formatDateTimeInTimeZone(value: string, timeZone: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone,
+  }).format(new Date(value));
+}
 
 export function matchesProductSearch(
   product: Pick<Product, "sku" | "name" | "productType">,
@@ -137,12 +177,36 @@ export function calculateSalesLineAmounts(line: SalesHistory["lines"][number]) {
   return { grossAmount, cgstAmount, sgstAmount, gstAmount, netAmount };
 }
 
+export function groupByKey<T>(items: T[], keyOf: (item: T) => string): [string, T[]][] {
+  const map = new Map<string, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const bucket = map.get(key);
+    if (bucket) bucket.push(item);
+    else map.set(key, [item]);
+  }
+  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+type SalesGrouping = "name" | "category" | "hsn" | "invoice" | "paymentType";
+type SalesLineEntry = { item: SalesHistory; line: SalesHistory["lines"][number] };
+
+export function getSalesGroupKey(entry: SalesLineEntry, groupBy: SalesGrouping) {
+  if (groupBy === "name") return entry.line.productName;
+  if (groupBy === "category") return entry.line.categoryName || "Uncategorized";
+  if (groupBy === "hsn") return entry.line.hsnCode || "No HSN";
+  if (groupBy === "invoice") return entry.item.orderNumber;
+  return entry.item.paymentMethod?.toUpperCase() || "UNKNOWN";
+}
+
 export function OperationsView({
   bootstrap,
   locationId,
   role,
   onNotice,
   onInventoryChanged,
+  onKdsEnabledChanged,
+  onTimeZoneChanged,
   initialTab = "inventory",
 }: {
   bootstrap: PosBootstrap;
@@ -150,10 +214,12 @@ export function OperationsView({
   role: string;
   onNotice: (message: string) => void;
   onInventoryChanged: () => Promise<void>;
-  initialTab?: "inventory" | "vendors" | "purchases" | "sales";
+  onKdsEnabledChanged: (enabled: boolean) => void;
+  onTimeZoneChanged: (timeZone: string) => void;
+  initialTab?: "inventory" | "vendors" | "purchases" | "sales" | "settings";
 }) {
   const [tab, setTab] = useState<
-    "inventory" | "vendors" | "purchases" | "sales"
+    "inventory" | "vendors" | "purchases" | "sales" | "settings"
   >(initialTab);
   const [inventory, setInventory] = useState<InventorySummary[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
@@ -161,6 +227,8 @@ export function OperationsView({
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [sales, setSales] = useState<SalesHistory[]>([]);
   const [summary, setSummary] = useState<SalesSummary | null>(null);
+  const [savingKdsSetting, setSavingKdsSetting] = useState(false);
+  const [savingTimeZone, setSavingTimeZone] = useState(false);
   const [supplierForm, setSupplierForm] =
     useState<SupplierForm>(emptySupplierForm());
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(
@@ -178,16 +246,41 @@ export function OperationsView({
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");
   const [groupBy, setGroupBy] = useState<
-    "none" | "name" | "category" | "hsn" | "invoice"
+    "none" | SalesGrouping
   >("none");
-  const receivableProducts = bootstrap.products.filter(
-    (product) => product.trackInventory,
-  );
-  const pickerProducts = receivableProducts.filter((product) =>
+  const purchasableProducts = bootstrap.products.filter(isPurchasableProduct);
+  const pickerProducts = purchasableProducts.filter((product) =>
     matchesProductSearch(product, productPickerSearch),
   );
   const admin = role !== "Cashier" && role !== "CounterStaff";
   const canEditPurchase = role !== "Cashier" && role !== "CounterStaff";
+  const canManageSettings = ["OrganizationOwner", "OperationsManager", "StoreManager"].includes(role);
+  const timeZone = bootstrap.businessLocation.timeZone;
+
+  const saveKdsSetting = async (enabled: boolean) => {
+    setSavingKdsSetting(true);
+    try {
+      await updateKdsSettings(enabled);
+      onKdsEnabledChanged(enabled);
+      onNotice(`KDS ${enabled ? "enabled" : "disabled"}`);
+    } catch (caught) {
+      onNotice(caught instanceof Error ? caught.message : "KDS setting could not be saved");
+    } finally {
+      setSavingKdsSetting(false);
+    }
+  };
+  const saveTimeZone = async (nextTimeZone: string) => {
+    setSavingTimeZone(true);
+    try {
+      const result = await updateOrganizationTimeZone(nextTimeZone);
+      onTimeZoneChanged(result.timeZone);
+      onNotice("Business timezone updated");
+    } catch (caught) {
+      onNotice(caught instanceof Error ? caught.message : "Business timezone could not be saved");
+    } finally {
+      setSavingTimeZone(false);
+    }
+  };
 
   const refresh = async () => {
     if (tab === "inventory") {
@@ -199,14 +292,27 @@ export function OperationsView({
       setSuppliers(await fetchSuppliers());
       setPurchases(await fetchPurchases());
     }
-    if (tab === "sales") {
-      setSales(await fetchSalesHistory());
-      setSummary(await fetchSalesSummary());
-    }
   };
   useEffect(() => {
-    void refresh();
+    if (tab !== "sales") void refresh();
   }, [tab]);
+  useEffect(() => {
+    if (tab !== "sales" && groupBy === "paymentType") setGroupBy("none");
+  }, [tab, groupBy]);
+  const loadSales = async () => {
+    const range = getBusinessDateRange(period, from, to, timeZone);
+    const [history, totals] = await Promise.all([
+      fetchSalesHistory(range?.from, range?.to),
+      range?.from && range?.to
+        ? fetchSalesSummary(range.from, range.to)
+        : Promise.resolve(null),
+    ]);
+    setSales(history);
+    setSummary(totals);
+  };
+  useEffect(() => {
+    if (tab === "sales") void loadSales();
+  }, [tab, period, from, to, timeZone]);
 
   const saveSupplier = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -261,10 +367,10 @@ export function OperationsView({
       };
       if (editingPurchaseId) {
         await updatePurchase(editingPurchaseId, input);
-        onNotice("Purchase updated and inventory reconciled");
+        onNotice("Purchase updated");
       } else {
         await receivePurchase(input);
-        onNotice("Purchase received and inventory updated");
+        onNotice("Purchase recorded");
       }
       setPurchaseForm(emptyPurchaseForm());
       setEditingPurchaseId(null);
@@ -299,7 +405,7 @@ export function OperationsView({
     setPurchaseForm({
       supplierId: purchase.supplierId,
       lines: purchase.lines.map((line) => {
-        const product = receivableProducts.find((item) => item.id === line.productId);
+        const product = purchasableProducts.find((item) => item.id === line.productId);
         return {
           productId: line.productId,
           productSearch: product ? productOptionValue(product) : "",
@@ -318,20 +424,43 @@ export function OperationsView({
   );
   const filteredPurchases = purchases.filter(
     (item) =>
-      matchesPeriod(item.createdAt, period, from, to) &&
+      matchesPeriod(item.createdAt, period, from, to, timeZone) &&
       `${item.reference} ${item.supplierName} ${item.lines.map((line) => `${line.productName} ${line.productId}`).join(" ")}`
         .toLowerCase()
         .includes(filterText),
   );
   const filteredSales = sales.filter(
     (item) =>
-      matchesPeriod(item.createdAt, period, from, to) &&
+      matchesPeriod(item.createdAt, period, from, to, timeZone) &&
       `${item.orderNumber} ${item.status} ${item.paymentStatus} ${item.lines.map((line) => `${line.productName} ${line.categoryName} ${line.hsnCode || ""}`).join(" ")}`
         .toLowerCase()
         .includes(filterText),
   );
   const purchaseTotals = summarizePurchaseTotals(filteredPurchases);
   const salesTotals = summarizeSalesTotals(filteredSales);
+
+  const productById = new Map(bootstrap.products.map((product) => [product.id, product]));
+  const categoryById = new Map(bootstrap.categories.map((category) => [category.id, category]));
+
+  const salesEntries: SalesLineEntry[] = filteredSales.flatMap((item) =>
+    item.lines.map((line) => ({ item, line })),
+  );
+  const salesGroups = groupBy === "none" ? null : groupByKey(salesEntries, (entry) => getSalesGroupKey(entry, groupBy));
+
+  type PurchaseLineEntry = { item: Purchase; line: Purchase["lines"][number] };
+  const purchaseEntries: PurchaseLineEntry[] = filteredPurchases.flatMap((item) =>
+    item.lines.map((line) => ({ item, line })),
+  );
+  const purchaseGroupKey = (entry: PurchaseLineEntry) => {
+    const product = productById.get(entry.line.productId);
+    if (groupBy === "name") return entry.line.productName;
+    if (groupBy === "category") return (product && categoryById.get(product.categoryId)?.name) || "Uncategorized";
+    if (groupBy === "hsn") return product?.hsnCode || "No HSN";
+    if (groupBy === "invoice") return entry.item.reference;
+    return "";
+  };
+  const purchaseGroups = groupBy === "none" || groupBy === "paymentType" ? null : groupByKey(purchaseEntries, purchaseGroupKey);
+
   const filterBar = (
     <div className="filter-bar">
       <input
@@ -372,6 +501,7 @@ export function OperationsView({
         <option value="category">Group by category</option>
         <option value="hsn">Group by HSN</option>
         <option value="invoice">Group by invoice</option>
+        {tab === "sales" && <option value="paymentType">Group by payment type (Cash/UPI)</option>}
       </select>
     </div>
   );
@@ -409,7 +539,44 @@ export function OperationsView({
             Sales history
           </button>
         )}
+        {canManageSettings && (
+          <button
+            className={tab === "settings" ? "active" : ""}
+            onClick={() => setTab("settings")}
+          >
+            Settings
+          </button>
+        )}
       </div>
+      {tab === "settings" && canManageSettings && (
+        <section className="table-panel">
+          <div className="panel-heading">
+            <h2>Kitchen display</h2>
+          </div>
+          <label className="setting-toggle">
+            <span>Enable KDS</span>
+            <input
+              type="checkbox"
+              checked={bootstrap.businessLocation.kdsEnabled}
+              disabled={savingKdsSetting}
+              onChange={(event) => void saveKdsSetting(event.target.checked)}
+            />
+          </label>
+          <label className="setting-toggle">
+            <span>Business timezone</span>
+            <select
+              value={timeZone}
+              disabled={savingTimeZone}
+              onChange={(event) => void saveTimeZone(event.target.value)}
+            >
+              <option value="UTC">UTC</option>
+              <option value="America/New_York">Eastern (New York)</option>
+              <option value="America/Chicago">Central (Chicago)</option>
+              <option value="Asia/Kolkata">India (Kolkata)</option>
+            </select>
+          </label>
+        </section>
+      )}
       {tab === "inventory" && (
         <div className="admin-grid">
           <section className="table-panel">
@@ -462,7 +629,7 @@ export function OperationsView({
                       <td>{item.productName}</td>
                       <td>{item.quantity}</td>
                       <td>{item.movementType}</td>
-                      <td>{new Date(item.createdAt).toLocaleString()}</td>
+                      <td>{formatDateTimeInTimeZone(item.createdAt, timeZone)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -602,7 +769,7 @@ export function OperationsView({
             <div className="purchase-table-wrap">
               <table className="purchase-entry-table">
                 <thead>
-                  <tr><th>Product</th><th>Qty</th><th>Unit price</th><th aria-label="Actions" /></tr>
+                  <tr><th>Item</th><th>Qty</th><th>Unit cost</th><th aria-label="Actions" /></tr>
                 </thead>
                 <tbody>
             {purchaseForm.lines.map((line, index) => (
@@ -686,15 +853,15 @@ export function OperationsView({
                 });
               }}
             >
-              Add product
+              Add item
             </button>
             {productPickerLine !== null && (
               <div className="purchase-picker-backdrop" role="presentation" onMouseDown={() => setProductPickerLine(null)}>
                 <div className="purchase-picker" role="dialog" aria-modal="true" aria-labelledby="purchase-picker-title" onMouseDown={(event) => event.stopPropagation()}>
                   <div className="purchase-picker-header">
                     <div>
-                      <h3 id="purchase-picker-title">Choose inventory product</h3>
-                      <p>Select a product for line {productPickerLine + 1}.</p>
+                      <h3 id="purchase-picker-title">Choose purchase item</h3>
+                      <p>Select a stock item or service expense for line {productPickerLine + 1}.</p>
                     </div>
                     <button type="button" className="secondary-button" onClick={() => setProductPickerLine(null)}>Close</button>
                   </div>
@@ -761,38 +928,102 @@ export function OperationsView({
             {filterBar}
             <div className="table-scroll">
               <table>
-                <thead>
-                  <tr>
-                    <th>Invoice #</th>
-                    <th>Vendor</th>
-                    <th>Total</th>
-                    <th>Received</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPurchases.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.reference}</td>
-                      <td>{item.supplierName}</td>
-                      <td>{item.total.toFixed(2)}</td>
-                      <td>{new Date(item.createdAt).toLocaleString()}</td>
-                      <td>
-                        {canEditPurchase ? (
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => editPurchase(item)}
-                          >
-                            {editingPurchaseId === item.id ? "Editing" : "Edit"}
-                          </button>
-                        ) : (
-                          <span className="muted-text">Read-only</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
+                {purchaseGroups === null ? (
+                  <>
+                    <thead>
+                      <tr>
+                        <th>Invoice #</th>
+                        <th>Vendor</th>
+                        <th>Total</th>
+                        <th>Received</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredPurchases.map((item) => (
+                        <tr key={item.id}>
+                          <td>{item.reference}</td>
+                          <td>{item.supplierName}</td>
+                          <td>{item.total.toFixed(2)}</td>
+                          <td>{formatDateTimeInTimeZone(item.createdAt, timeZone)}</td>
+                          <td>
+                            {canEditPurchase ? (
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => editPurchase(item)}
+                              >
+                                {editingPurchaseId === item.id ? "Editing" : "Edit"}
+                              </button>
+                            ) : (
+                              <span className="muted-text">Read-only</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                ) : (
+                  <>
+                    <thead>
+                      <tr>
+                        <th>Invoice #</th>
+                        <th>Vendor</th>
+                        <th>Item</th>
+                        <th>Qty</th>
+                        <th>Unit Cost</th>
+                        <th>Line Total</th>
+                        <th>Received</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {purchaseGroups.map(([groupLabel, entries]) => {
+                        const groupQty = entries.reduce((sum, entry) => sum + entry.line.quantity, 0);
+                        const groupTotal = entries.reduce(
+                          (sum, entry) => sum + entry.line.quantity * entry.line.unitCost,
+                          0,
+                        );
+                        return (
+                          <>
+                            <tr key={`group-${groupLabel}`} className="group-row">
+                              <td colSpan={5}>
+                                {groupLabel} ({entries.length})
+                              </td>
+                              <td>{groupQty}</td>
+                              <td>{groupTotal.toFixed(2)}</td>
+                              <td />
+                            </tr>
+                            {entries.map((entry, entryIndex) => (
+                              <tr key={`${groupLabel}-${entry.item.id}-${entry.line.productId}-${entryIndex}`}>
+                                <td>{entry.item.reference}</td>
+                                <td>{entry.item.supplierName}</td>
+                                <td>{entry.line.productName}</td>
+                                <td>{entry.line.quantity}</td>
+                                <td>{entry.line.unitCost.toFixed(2)}</td>
+                                <td>{(entry.line.quantity * entry.line.unitCost).toFixed(2)}</td>
+                                <td>{formatDateTimeInTimeZone(entry.item.createdAt, timeZone)}</td>
+                                <td>
+                                  {canEditPurchase ? (
+                                    <button
+                                      type="button"
+                                      className="secondary-button"
+                                      onClick={() => editPurchase(entry.item)}
+                                    >
+                                      {editingPurchaseId === entry.item.id ? "Editing" : "Edit"}
+                                    </button>
+                                  ) : (
+                                    <span className="muted-text">Read-only</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </>
+                        );
+                      })}
+                    </tbody>
+                  </>
+                )}
               </table>
             </div>
           </section>
@@ -851,42 +1082,44 @@ export function OperationsView({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSales.flatMap((item) =>
-                    item.lines.map((line, lineIndex) => {
-                      const {
-                        grossAmount,
-                        cgstAmount,
-                        sgstAmount,
-                        gstAmount,
-                        netAmount,
-                      } = calculateSalesLineAmounts(line);
-
-                      return (
-                        <tr key={`${item.orderId}-${line.productId}-${lineIndex}`}>
-                          <td>{item.orderNumber}</td>
-                          <td>{line.hsnCode || "—"}</td>
-                          <td>{line.categoryName || "—"}</td>
-                          <td>{line.productName}</td>
-                          <td>{new Date(item.createdAt).toLocaleString()}</td>
-                          <td>{line.quantity}</td>
-                          <td>{grossAmount.toFixed(2)}</td>
-                          <td>
-                            {line.gstRate}%<br />
-                            {gstAmount.toFixed(2)}
-                          </td>
-                          <td>
-                            {line.cgstRate}%<br />
-                            {cgstAmount.toFixed(2)}
-                          </td>
-                          <td>
-                            {line.sgstRate}%<br />
-                            {sgstAmount.toFixed(2)}
-                          </td>
-                          <td>{netAmount.toFixed(2)}</td>
-                        </tr>
-                      );
-                    }),
-                  )}
+                  {salesGroups === null
+                    ? filteredSales.flatMap((item) =>
+                        item.lines.map((line, lineIndex) => (
+                          <SalesLineRow
+                            key={`${item.orderId}-${line.productId}-${lineIndex}`}
+                            item={item}
+                            line={line}
+                            timeZone={timeZone}
+                          />
+                        )),
+                      )
+                    : salesGroups.map(([groupLabel, entries]) => {
+                        const groupTotals = summarizeSalesTotals(
+                          entries.map((entry) => ({ ...entry.item, lines: [entry.line] })),
+                        );
+                        return (
+                          <>
+                            <tr key={`group-${groupLabel}`} className="group-row">
+                              <td colSpan={6}>
+                                {groupLabel} ({entries.length})
+                              </td>
+                              <td>{groupTotals.grossSales.toFixed(2)}</td>
+                              <td>{groupTotals.tax.toFixed(2)}</td>
+                              <td />
+                              <td />
+                              <td>{groupTotals.netSales.toFixed(2)}</td>
+                            </tr>
+                            {entries.map((entry, entryIndex) => (
+                              <SalesLineRow
+                                key={`${groupLabel}-${entry.item.orderId}-${entry.line.productId}-${entryIndex}`}
+                                item={entry.item}
+                                line={entry.line}
+                                timeZone={timeZone}
+                              />
+                            ))}
+                          </>
+                        );
+                      })}
                 </tbody>
               </table>
             </div>
@@ -894,5 +1127,42 @@ export function OperationsView({
         </div>
       )}
     </section>
+  );
+}
+
+function SalesLineRow({
+  item,
+  line,
+  timeZone,
+}: {
+  item: SalesHistory;
+  line: SalesHistory["lines"][number];
+  timeZone: string;
+}) {
+  const { grossAmount, cgstAmount, sgstAmount, gstAmount, netAmount } =
+    calculateSalesLineAmounts(line);
+  return (
+    <tr>
+      <td>{item.orderNumber}</td>
+      <td>{line.hsnCode || "—"}</td>
+      <td>{line.categoryName || "—"}</td>
+      <td>{line.productName}</td>
+      <td>{formatDateTimeInTimeZone(item.createdAt, timeZone)}</td>
+      <td>{line.quantity}</td>
+      <td>{grossAmount.toFixed(2)}</td>
+      <td>
+        {line.gstRate}%<br />
+        {gstAmount.toFixed(2)}
+      </td>
+      <td>
+        {line.cgstRate}%<br />
+        {cgstAmount.toFixed(2)}
+      </td>
+      <td>
+        {line.sgstRate}%<br />
+        {sgstAmount.toFixed(2)}
+      </td>
+      <td>{netAmount.toFixed(2)}</td>
+    </tr>
   );
 }

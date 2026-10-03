@@ -129,6 +129,7 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px 
 .operations-view .admin-grid { align-items: start; }
 .kds-screen { padding: 22px; border: 1px solid var(--line); border-radius: 9px; background: #ffffff; box-shadow: 0 5px 18px #17342d0a; }
 .kds-item .primary-button { align-self: flex-start; padding: 8px 12px; font-size: 11px; }
+.setting-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: 420px; padding: 18px 0; }
 .toast { max-width: min(420px, calc(100vw - 32px)); line-height: 1.4; }
 @media (max-width: 900px) {
 	.operations-header { position: static; height: auto; min-height: 72px; padding: 14px 18px; gap: 12px; }

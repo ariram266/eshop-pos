@@ -28,7 +28,7 @@ public sealed class KdsService(WebPubSubNotifier notifier)
 
 	public async Task<IReadOnlyList<KdsWorkItemDto>> GetActiveAsync(SqlConnection connection, ActorContext actor, CancellationToken cancellationToken)
 	{
-		const string sql = "SELECT Id, OrderId, OrderNumber, ProductName, Quantity, StationCode, Status, CreatedAt FROM KdsWorkItems WHERE OrganizationId=@org AND LocationId=@location AND Status <> 'COMPLETED' ORDER BY CreatedAt;";
+		const string sql = "SELECT Id, OrderId, OrderNumber, ProductName, Quantity, StationCode, Status, CreatedAt FROM KdsWorkItems WHERE OrganizationId=@org AND LocationId=@location AND Status <> 'COMPLETED' AND EXISTS (SELECT 1 FROM Locations WHERE Id=@location AND OrganizationId=@org AND KdsEnabled=1) ORDER BY CreatedAt;";
 		await using var command = new SqlCommand(sql, connection);
 		command.Parameters.AddWithValue("org", actor.OrganizationId);
 		command.Parameters.AddWithValue("location", actor.LocationId);
@@ -46,7 +46,7 @@ public sealed class KdsService(WebPubSubNotifier notifier)
 		if (!allowed.Contains(normalized, StringComparer.Ordinal)) throw new ArgumentException("Unsupported KDS status.");
 
 		await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-		await using var current = new SqlCommand("SELECT Id,OrderId,OrderNumber,ProductName,Quantity,StationCode,Status,CreatedAt FROM KdsWorkItems WITH (UPDLOCK) WHERE Id=@id AND OrganizationId=@org AND LocationId=@location;", connection, transaction);
+		await using var current = new SqlCommand("SELECT Id,OrderId,OrderNumber,ProductName,Quantity,StationCode,Status,CreatedAt FROM KdsWorkItems WITH (UPDLOCK) WHERE Id=@id AND OrganizationId=@org AND LocationId=@location AND EXISTS (SELECT 1 FROM Locations WHERE Id=@location AND OrganizationId=@org AND KdsEnabled=1);", connection, transaction);
 		current.Parameters.AddWithValue("id", workItemId); current.Parameters.AddWithValue("org", actor.OrganizationId); current.Parameters.AddWithValue("location", actor.LocationId);
 		await using var reader = await current.ExecuteReaderAsync(cancellationToken);
 		if (!await reader.ReadAsync(cancellationToken)) throw new KeyNotFoundException("KDS work item was not found.");
